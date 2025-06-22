@@ -38,4 +38,71 @@ public class DPTest {
         }
         return dp[amount] == amount + 1 ? -1 : dp[amount];
     }
+
+    public int maxEnvelopes(int[][] envelopes) {
+        if (envelopes == null || envelopes.length == 0) {
+            return 0;
+        }
+        Arrays.sort(envelopes, (p1, p2) -> {
+            if (p1[0] == p2[0]) {
+                return Integer.compare(p1[1], p2[1]);
+            } else {
+                return Integer.compare(p1[0], p2[0]);
+            }
+        });
+        int length = envelopes.length;
+        int[] dp = new int[length];
+        Arrays.fill(dp, 1);
+        for (int i = 1; i < length; i++) {
+            for (int j = 0; j < i; j++) {
+                if (envelopes[i][0] > envelopes[j][0] && envelopes[i][1] > envelopes[j][1]) {
+                    dp[i] = Math.max(dp[i], dp[j] + 1);
+                }
+            }
+        }
+        int res = 0;
+        for (int i : dp) {
+            res = Math.max(res, i);
+        }
+        return res;
+    }
+
+    public int longestCommonSubsequence(String text1, String text2) {
+        if (text1 == null || text1.length() == 0 || text2 == null || text2.length() == 0) {
+            return 0;
+        }
+        int m = text1.length(), n = text2.length();
+        int[][] dp = new int[m + 1][n + 1];
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                if (text1.charAt(i - 1) == text2.charAt(j - 1)) {
+                    dp[i][j] = 1 + dp[i - 1][j - 1];
+                } else {
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                }
+            }
+        }
+        return dp[m][n];
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
