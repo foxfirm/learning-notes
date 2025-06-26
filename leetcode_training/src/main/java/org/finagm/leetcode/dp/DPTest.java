@@ -11,7 +11,11 @@ import java.util.Arrays;
 public class DPTest {
 
     public static void main(String[] args) {
-        System.out.println(fib(4));
+        Node a1 = new Node(2, 4);
+        Node a2 = new Node(1, 2);
+        Node a3 = new Node(3, 3);
+        Node[] nodes = new Node[]{a1, a2, a3};
+        System.out.println(zeroOnePackage(nodes, 4));
     }
 
     public static int fib(int n) {
@@ -161,6 +165,32 @@ public class DPTest {
             }
         }
         return dp[m][n];
+    }
+
+    public static class Node {
+        public int wt;
+        public int val;
+
+        public Node(int wt, int val) {
+            this.wt = wt;
+            this.val = val;
+        }
+    }
+
+    public static int zeroOnePackage(Node[] nodes, int w) {
+        int n = nodes.length;
+        int[][] dp = new int[n + 1][w + 1];
+        for (int i = 1; i <= n; i++) {
+            for (int j = 1; j <= w; j++) {
+                Node node = nodes[i - 1];
+                if (node.wt > j) {
+                    dp[i][j] = dp[i - 1][j];
+                } else {
+                    dp[i][j] = Math.max(dp[i - 1][j - node.wt] + node.val, dp[i - 1][j]);
+                }
+            }
+        }
+        return dp[n][w];
     }
 
 
