@@ -15,7 +15,9 @@ public class DPTest {
         Node a2 = new Node(1, 2);
         Node a3 = new Node(3, 3);
         Node[] nodes = new Node[]{a1, a2, a3};
-        System.out.println(zeroOnePackage(nodes, 4));
+        //System.out.println(zeroOnePackage(nodes, 4));
+
+        System.out.println(knapsack(4,3,new int[]{2,1,3},new int[]{4,2,3}));
     }
 
     public static int fib(int n) {
@@ -193,6 +195,45 @@ public class DPTest {
         return dp[n][w];
     }
 
+    /**
+     * 0-1 背包问题 - 二维动态规划解法
+     * 在不超过背包容量的情况下，计算能装入物品的最大价值
+     *
+     * 示例参数:
+     * N = 3, W = 4
+     * wt = [2, 1, 3]
+     * val = [4, 2, 3]
+     *
+     * @param w 背包的最大承重容量
+     * @param n 物品的数量
+     * @param wt 每个物品的重量数组，wt[i] 表示第 i 个物品的重量
+     * @param val 每个物品的价值数组，val[i] 表示第 i 个物品的价值
+     * @return 能装入背包的最大总价值
+     */
+    public static int knapsack(int w, int n, int[] wt, int[] val) {
+        // dp[i][j] 表示前 i 个物品在背包容量为 j 时能获得的最大价值
+        int[][] dp = new int[n + 1][w + 1];
+        
+        // 遍历每个物品
+        for (int i = 1; i <= n; i++) {
+            // 遍历每种背包容量
+            for (int j = 1; j <= w; j++) {
+                // 当前物品重量超过背包容量，无法装入，继承前一个物品的最优解
+                if (j - wt[i - 1] < 0) {
+                    dp[i][j] = dp[i - 1][j];
+                } else {
+                    // 选择装入或不装入当前物品的最大值
+                    // 不装：dp[i-1][j]
+                    // 装入：dp[i-1][j-wt[i-1]] + val[i-1]
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i - 1][j - wt[i - 1]] + val[i - 1]);
+                }
+            }
+        }
+        
+        // 返回 n 个物品在容量 w 下的最大价值
+        return dp[n][w];
+    }
+
     public boolean canPartition(int[] nums) {
         int total = Arrays.stream(nums).sum();
         if (total % 2 != 0) {
@@ -235,8 +276,60 @@ public class DPTest {
         return dp[n][amount];
     }
 
+    public int minPathSum(int[][] grid) {
+        int m = grid.length;
+        int n = grid[0].length;
+        int[][] dp = new int[m + 1][n + 1];
+        dp[1][1] = grid[0][0];
+        for (int i = 2; i <= m; i++) {
+            dp[i][1] = dp[i - 1][1] + grid[i - 1][0];
+        }
+        for (int j = 2; j <= n; j++) {
+            dp[1][j] = dp[1][j - 1] + grid[0][j - 1];
+        }
+        for (int i = 2; i <= m; i++) {
+            for (int j = 2; j <= n; j++) {
+                dp[i][j] = Math.min(dp[i - 1][j], dp[i][j - 1]) + grid[i - 1][j - 1];
+            }
+        }
+        return dp[m][n];
+    }
 
+    public boolean canPartitionGrid(int[][] grid) {
+        int m = grid.length;
+        int n = grid[0].length;
+        long[][] sum = new long[m + 1][n + 1];
+        long total = 0;
+        for (int i = 0; i < m; i++) {
+            for (int j = 0; j < n; j++) {
+                sum[i + 1][j + 1] = sum[i][j + 1] + sum[i + 1][j] - sum[i][j] + grid[i][j];
+                total += grid[i][j];
+            }
+        }
+        if (total % 2 != 0) {
+            return false;
+        }
+        long target = total / 2;
+        for (int i = 1; i < m; i++) {
+            if (sum[i][n] == target) {
+                return true;
+            }else{
+                for (int j = 1; j < n; j++) {
+                    if (sum[i][j] == target) {
+                        return true;
+                    }
+                }
 
+            }
+        }
+
+        for (int j = 1; j < n; j++) {
+            if (sum[m][j] == target) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 
 
