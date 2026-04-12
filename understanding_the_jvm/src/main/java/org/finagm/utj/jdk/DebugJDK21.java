@@ -31,6 +31,9 @@ public class DebugJDK21 {
         String s5 = "world";
         String s6 = new String("world").intern();
         System.out.println("s5 == s6 : " + (s5 == s6));  // true
+
+        String s7 = new StringBuilder("计算").append("va").toString();
+        System.out.println(s7.intern() == s7);
     }
 
 
