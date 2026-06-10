@@ -1,33 +1,30 @@
 /**
- * SimpleTree - 简洁拖拽树插件
- * 用法: $('#tree').simpleTree({ data: [...], onCopy: fn, onMove: fn })
+ * SimpleTree - 最终修复版（复制后节点可拖拽）
  */
 (function($) {
     'use strict';
 
-    // 默认配置
     const defaults = {
-        data: [],           // 树数据 [{ id, text, children }]
-        defaultCollapsed: true,  // 默认折叠
-        onCopy: null,       // 复制回调 (sourceNode, clonedNode, targetId, position)
-        onMove: null,       // 移动回调 (node, targetId, position)
+        data: [],
+        defaultCollapsed: true,
+        onCopy: null,
+        onMove: null,
         onDragStart: null,
         onDragEnd: null
     };
 
-    // 全局拖拽状态
     let dragState = {
-        sourceNode: null,    // 源节点数据
-        sourceTree: null,    // 源树容器
-        sourceId: null,      // 源节点ID
-        clone: null,         // 克隆元素
-        targetNode: null,    // 目标节点
+        sourceNode: null,
+        sourceTree: null,
+        sourceId: null,
+        clone: null,
+        targetNode: null,
+        targetPosition: null,
         isDragging: false
     };
 
     // ========== 工具函数 ==========
     
-    // 根据ID查找节点
     function findNode(tree, id) {
         for (let i = 0; i < tree.length; i++) {
             const node = tree[i];
@@ -43,7 +40,6 @@
         return null;
     }
 
-    // 删除节点
     function removeNode(tree, id) {
         for (let i = 0; i < tree.length; i++) {
             if (tree[i].id == id) {
@@ -57,7 +53,6 @@
         return false;
     }
 
-    // 插入节点
     function insertNode(tree, targetId, newNode, position) {
         for (let i = 0; i < tree.length; i++) {
             const node = tree[i];
@@ -79,12 +74,10 @@
         return false;
     }
 
-    // 复制节点
     function cloneNode(node) {
         return JSON.parse(JSON.stringify(node));
     }
 
-    // 检查是否是后代
     function isDescendant(parentNode, childId) {
         if (!parentNode.children) return false;
         for (let child of parentNode.children) {
@@ -94,7 +87,48 @@
         return false;
     }
 
-    // 获取放置位置
+    // ========== 折叠状态保存和恢复 ==========
+    
+    function collectCollapsedState($container) {
+        const state = {};
+        $container.find('li').each(function() {
+            const $li = $(this);
+            const $treeNode = $li.find('.tree-node').first();
+            const nodeId = $treeNode.data('id');
+            if (!nodeId) return;
+            
+            const $children = $li.children('.node-children');
+            if ($children.length && $children.is(':visible') === false) {
+                state[nodeId] = true;
+            } else if ($children.length) {
+                state[nodeId] = false;
+            }
+        });
+        return state;
+    }
+
+    function restoreCollapsedState($container, state) {
+        $container.find('li').each(function() {
+            const $li = $(this);
+            const $treeNode = $li.find('.tree-node').first();
+            const nodeId = $treeNode.data('id');
+            if (!nodeId) return;
+            
+            const $children = $li.children('.node-children');
+            const $icon = $li.find('.toggle-icon');
+            
+            if ($children.length && state.hasOwnProperty(nodeId)) {
+                if (state[nodeId] === true) {
+                    $children.hide();
+                    $icon.text('▶');
+                } else {
+                    $children.show();
+                    $icon.text('▼');
+                }
+            }
+        });
+    }
+
     function getDropPosition(e, targetEl) {
         const rect = targetEl.getBoundingClientRect();
         const y = e.clientY;
@@ -105,7 +139,6 @@
         return 'inside';
     }
 
-    // 转义HTML
     function escapeHtml(str) {
         if (!str) return '';
         return String(str).replace(/[&<>]/g, function(m) {
@@ -116,12 +149,22 @@
         });
     }
 
+    // 生成唯一ID
+    function generateId() {
+        return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+    }
+
     // ========== 渲染函数 ==========
     
-    function renderTree($container, data, options) {
+    function renderTree($container, data, options, preserveState = true) {
         if (!data || !data.length) {
             $container.html('<div class="tree-node">无数据</div>');
             return;
+        }
+
+        let collapsedState = {};
+        if (preserveState) {
+            collapsedState = collectCollapsedState($container);
         }
 
         function buildHtml(nodes) {
@@ -129,12 +172,15 @@
             for (let i = 0; i < nodes.length; i++) {
                 const node = nodes[i];
                 const hasChildren = node.children && node.children.length > 0;
-                const collapsedClass = (options.defaultCollapsed && hasChildren) ? 'collapsed' : '';
-                const collapsedStyle = (options.defaultCollapsed && hasChildren) ? 'display: none;' : '';
+                let isCollapsed = options.defaultCollapsed;
+                if (preserveState && collapsedState.hasOwnProperty(node.id)) {
+                    isCollapsed = collapsedState[node.id];
+                }
+                const collapsedStyle = (hasChildren && isCollapsed) ? 'display: none;' : '';
                 
                 html += `<li data-id="${node.id}">`;
                 html += `<div class="tree-node" data-id="${node.id}">`;
-                html += `<span class="toggle-icon ${hasChildren ? '' : 'empty'}" data-id="${node.id}">${hasChildren ? (options.defaultCollapsed ? '▶' : '▼') : ''}</span>`;
+                html += `<span class="toggle-icon ${hasChildren ? '' : 'empty'}" data-id="${node.id}">${hasChildren ? (isCollapsed ? '▶' : '▼') : ''}</span>`;
                 html += `<span class="node-content">${escapeHtml(node.text)}</span>`;
                 html += `</div>`;
                 if (hasChildren) {
@@ -147,21 +193,25 @@
         }
 
         $container.html(buildHtml(data));
+        
+        if (preserveState && Object.keys(collapsedState).length > 0) {
+            restoreCollapsedState($container, collapsedState);
+        }
+        
         bindEvents($container, options);
     }
 
     // ========== 事件绑定 ==========
     
     function bindEvents($container, options) {
-        // 折叠/展开
-        $container.off('click', '.toggle-icon');
-        $container.on('click', '.toggle-icon', function(e) {
+        // 折叠/展开事件
+        $container.off('click.simpleTree', '.toggle-icon');
+        $container.on('click.simpleTree', '.toggle-icon', function(e) {
             e.stopPropagation();
             const $icon = $(this);
             const $node = $icon.closest('.tree-node');
             const $li = $node.closest('li');
             const $children = $li.children('.node-children');
-            const nodeId = $node.data('id');
             
             if ($children.length && $children.is(':visible')) {
                 $children.hide();
@@ -172,9 +222,9 @@
             }
         });
 
-        // 拖拽开始
-        $container.off('mousedown', '.tree-node');
-        $container.on('mousedown', '.tree-node', function(e) {
+        // 拖拽事件 - 使用事件委托
+        $container.off('mousedown.simpleTree', '.tree-node');
+        $container.on('mousedown.simpleTree', '.tree-node', function(e) {
             if (e.which !== 1) return;
             if ($(e.target).hasClass('toggle-icon')) return;
             
@@ -190,10 +240,25 @@
         
         const $node = $(nodeEl);
         const nodeId = $node.data('id');
+        
+        if (!nodeId) {
+            console.warn('无法获取节点ID');
+            return;
+        }
+        
         const treeData = $container.data('treeData');
+        if (!treeData) {
+            console.warn('无法获取树数据');
+            return;
+        }
+        
         const nodeInfo = findNode(treeData, nodeId);
         
-        if (!nodeInfo) return;
+        if (!nodeInfo) {
+            console.warn('找不到节点数据', nodeId);
+            console.log('当前树数据:', treeData);
+            return;
+        }
         
         dragState.sourceNode = nodeInfo.node;
         dragState.sourceTree = $container;
@@ -202,7 +267,6 @@
         
         $node.addClass('dragging');
         
-        // 创建克隆体
         dragState.clone = $('<div class="simple-tree-clone">')
             .text(nodeInfo.node.text)
             .css({ top: e.clientY + 10, left: e.clientX + 10 })
@@ -212,6 +276,7 @@
             options.onDragStart(nodeInfo.node, $container.attr('id'));
         }
         
+        $(document).off('mousemove.simpleTree mouseup.simpleTree');
         $(document).on('mousemove.simpleTree', function(me) {
             onDragMove(me, options);
         });
@@ -228,7 +293,6 @@
             dragState.clone.css({ top: e.clientY + 10, left: e.clientX + 10 });
         }
         
-        // 查找目标节点
         const elemUnderCursor = document.elementsFromPoint(e.clientX, e.clientY);
         let targetNodeEl = null;
         for (let i = 0; i < elemUnderCursor.length; i++) {
@@ -239,27 +303,32 @@
             }
         }
         
-        // 清除旧高亮
         if (dragState.targetNode) {
-            $(dragState.targetNode).removeClass('drag-over');
+            $(dragState.targetNode).removeClass('drag-over-before drag-over-after drag-over-inside');
             dragState.targetNode = null;
         }
         
-        // 高亮新目标
         if (targetNodeEl) {
             const $targetTree = $(targetNodeEl).closest('.simple-tree');
             const $sourceTree = dragState.sourceTree;
             const sourceId = $sourceTree.attr('id');
             const targetId = $targetTree.attr('id');
             
-            // 允许：左→右 或 右→右
             const isValid = (sourceId === 'leftTree' && targetId === 'rightTree') ||
                            (sourceId === 'rightTree' && targetId === 'rightTree');
             
             if (isValid) {
+                const position = getDropPosition(e, targetNodeEl);
                 dragState.targetNode = targetNodeEl;
-                $(targetNodeEl).addClass('drag-over');
-                $(targetNodeEl).data('dropPos', getDropPosition(e, targetNodeEl));
+                dragState.targetPosition = position;
+                
+                if (position === 'before') {
+                    $(targetNodeEl).addClass('drag-over-before');
+                } else if (position === 'after') {
+                    $(targetNodeEl).addClass('drag-over-after');
+                } else {
+                    $(targetNodeEl).addClass('drag-over-inside');
+                }
             }
         }
     }
@@ -272,10 +341,9 @@
         
         let success = false;
         
-        if (dragState.targetNode) {
-            const dropPos = $(dragState.targetNode).data('dropPos') || 'inside';
+        if (dragState.targetNode && dragState.targetPosition) {
             const targetId = $(dragState.targetNode).data('id');
-            success = performDrop(targetId, dropPos, options);
+            success = performDrop(targetId, dragState.targetPosition, options);
         }
         
         if (options.onDragEnd) {
@@ -290,12 +358,15 @@
         const sourceTree = dragState.sourceTree;
         const sourceId = dragState.sourceId;
         
-        // 获取目标树
-        const targetTree = $('.simple-tree').filter(function() {
-            return $(this).find(`[data-id="${targetId}"]`).length > 0;
-        }).first();
+        // 查找目标树
+        let targetTree = null;
+        $('.simple-tree').each(function() {
+            if ($(this).find(`[data-id="${targetId}"]`).length > 0) {
+                targetTree = $(this);
+            }
+        });
         
-        if (!targetTree.length) return false;
+        if (!targetTree) return false;
         
         const sourceTreeId = sourceTree.attr('id');
         const targetTreeId = targetTree.attr('id');
@@ -304,9 +375,14 @@
         
         // 左 -> 右（复制）
         if (sourceTreeId === 'leftTree' && targetTreeId === 'rightTree') {
-            const targetData = targetTree.data('treeData');
+            let targetData = targetTree.data('treeData');
+            // 深拷贝目标数据
+            targetData = JSON.parse(JSON.stringify(targetData));
+            targetTree.data('treeData', targetData);
+            
             const cloned = cloneNode(sourceNode);
-            cloned.id = sourceNode.id + '_copy_' + Date.now();
+            // 生成全新ID，确保唯一
+            cloned.id = generateId();
             
             if (insertNode(targetData, targetId, cloned, position)) {
                 targetTree.data('treeData', targetData);
@@ -315,9 +391,8 @@
                     onCopy: options.onCopy,
                     onMove: options.onMove,
                     onDragStart: options.onDragStart,
-                    onDragEnd: options.onDragEnd,
-                    renderNode: options.renderNode
-                });
+                    onDragEnd: options.onDragEnd
+                }, true);
                 if (options.onCopy) {
                     options.onCopy(sourceNode, cloned, targetId, position);
                 }
@@ -326,16 +401,16 @@
         }
         // 右 -> 右（移动）
         else if (sourceTreeId === 'rightTree' && targetTreeId === 'rightTree') {
-            const targetData = targetTree.data('treeData');
+            let targetData = targetTree.data('treeData');
+            targetData = JSON.parse(JSON.stringify(targetData));
+            targetTree.data('treeData', targetData);
             
             if (sourceId == targetId) return false;
             
             const targetNodeInfo = findNode(targetData, targetId);
             if (targetNodeInfo && isDescendant(sourceNode, targetId)) return false;
             
-            // 删除源节点
             removeNode(targetData, sourceId);
-            // 插入到新位置
             if (insertNode(targetData, targetId, sourceNode, position)) {
                 targetTree.data('treeData', targetData);
                 renderTree(targetTree, targetData, { 
@@ -343,9 +418,8 @@
                     onCopy: options.onCopy,
                     onMove: options.onMove,
                     onDragStart: options.onDragStart,
-                    onDragEnd: options.onDragEnd,
-                    renderNode: options.renderNode
-                });
+                    onDragEnd: options.onDragEnd
+                }, true);
                 if (options.onMove) {
                     options.onMove(sourceNode, targetId, position);
                 }
@@ -361,7 +435,7 @@
             $('.tree-node.dragging').removeClass('dragging');
         }
         if (dragState.targetNode) {
-            $(dragState.targetNode).removeClass('drag-over');
+            $(dragState.targetNode).removeClass('drag-over-before drag-over-after drag-over-inside');
         }
         if (dragState.clone) {
             dragState.clone.remove();
@@ -373,6 +447,7 @@
             sourceId: null,
             clone: null,
             targetNode: null,
+            targetPosition: null,
             isDragging: false
         };
         
@@ -388,11 +463,10 @@
             const $this = $(this);
             $this.addClass('simple-tree');
             
-            // 确保每个节点都有id
             function ensureId(nodes) {
                 for (let i = 0; i < nodes.length; i++) {
                     if (!nodes[i].id) {
-                        nodes[i].id = 'node_' + Date.now() + '_' + i + '_' + Math.random();
+                        nodes[i].id = generateId();
                     }
                     if (nodes[i].children) {
                         ensureId(nodes[i].children);
@@ -404,7 +478,7 @@
                 const dataCopy = JSON.parse(JSON.stringify(options.data));
                 ensureId(dataCopy);
                 $this.data('treeData', dataCopy);
-                renderTree($this, dataCopy, options);
+                renderTree($this, dataCopy, options, false);
             }
         });
     };

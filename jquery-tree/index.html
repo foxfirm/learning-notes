@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>SimpleTree - 简洁拖拽树</title>
+    <title>SimpleTree - 优化版</title>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <link rel="stylesheet" href="simple-tree.css">
     <script src="simple-tree.js"></script>
@@ -64,6 +64,33 @@
             color: #666;
             font-size: 14px;
         }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 15px;
+            font-size: 12px;
+        }
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .legend-before {
+            width: 30px;
+            height: 3px;
+            background: #0078d4;
+        }
+        .legend-after {
+            width: 30px;
+            height: 3px;
+            background: #0078d4;
+        }
+        .legend-inside {
+            width: 30px;
+            height: 3px;
+            background: #28a745;
+        }
         button {
             padding: 4px 12px;
             margin: 0 4px;
@@ -73,19 +100,22 @@
 </head>
 <body>
 <div class="container">
-    <!-- 左侧树 -->
     <div class="tree-panel">
         <h3>📂 左侧树（拖拽复制 →）</h3>
         <div id="leftTree"></div>
     </div>
     
-    <!-- 右侧树 -->
     <div class="tree-panel">
         <h3>🎯 右侧树（内部可拖拽移动）</h3>
         <div style="padding: 8px; text-align: center; background: #fafafa;">
             <button id="expandAll">全部展开</button>
             <button id="collapseAll">全部折叠</button>
             <button id="resetRight">重置右侧</button>
+        </div>
+        <div class="legend">
+            <span class="legend-item"><span class="legend-before"></span> 插入上方</span>
+            <span class="legend-item"><span class="legend-after"></span> 插入下方</span>
+            <span class="legend-item"><span class="legend-inside"></span> 插入内部</span>
         </div>
         <div id="rightTree"></div>
     </div>
@@ -97,14 +127,13 @@
 </div>
 <div class="info">
     💡 使用说明<br>
-    • 从左侧拖拽节点到右侧 → 复制节点<br>
-    • 右侧内部拖拽节点到另一个节点上/下/内部 → 移动位置<br>
+    • 从左侧拖拽节点到右侧 → 复制节点（绿色边框=放入内部，蓝色粗边=插入前后）<br>
+    • 右侧内部拖拽节点 → 移动位置（会自动保持原有的折叠状态）<br>
     • 点击箭头展开/折叠子节点
 </div>
 
 <script>
     $(function() {
-        // 日志
         function addLog(msg, type) {
             const colors = { copy: '#64b5f6', move: '#ffb74d', error: '#ef5350', info: '#8bc34a' };
             const logHtml = `<div class="log-entry" style="color: ${colors[type] || colors.info}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
@@ -112,7 +141,6 @@
             $('#logPanel').scrollTop($('#logPanel')[0].scrollHeight);
         }
         
-        // 左侧树数据
         const leftData = [
             { id: "L1", text: "前端框架", children: [
                 { id: "L1-1", text: "Vue.js" },
@@ -129,7 +157,6 @@
             ]}
         ];
         
-        // 右侧树数据
         let rightData = [
             { id: "R1", text: "我的收藏", children: [
                 { id: "R1-1", text: "jQuery技巧" },
@@ -145,34 +172,30 @@
             { id: "R3", text: "已完成", children: [] }
         ];
         
-        // 初始化左侧树
         $('#leftTree').simpleTree({
             data: leftData,
             defaultCollapsed: true,
             onCopy: function(source, cloned, targetId, position) {
-                addLog(`📋 复制: "${source.text}" → 目标ID: ${targetId} (${position})`, 'copy');
+                addLog(`📋 复制: "${source.text}" → 目标: ${targetId} (${position})`, 'copy');
             },
             onDragStart: function(node, treeId) {
-                addLog(`🚀 开始拖拽: "${node.text}" (${treeId})`, 'info');
+                addLog(`🚀 开始拖拽: "${node.text}"`, 'info');
             },
             onDragEnd: function(node, success) {
                 if (!success) addLog(`❌ 拖拽取消: "${node.text}"`, 'error');
-                else addLog(`✅ 拖拽完成: "${node.text}"`, 'info');
             }
         });
         
-        // 初始化右侧树
         function initRightTree() {
             $('#rightTree').simpleTree({
                 data: JSON.parse(JSON.stringify(rightData)),
                 defaultCollapsed: true,
                 onCopy: function(source, cloned, targetId, position) {
-                    addLog(`📋 复制: "${source.text}" → 目标ID: ${targetId} (${position})`, 'copy');
-                    // 更新内部数据引用
+                    addLog(`📋 复制: "${source.text}" → 目标: ${targetId} (${position})`, 'copy');
                     rightData = $('#rightTree').data('treeData');
                 },
                 onMove: function(node, targetId, position) {
-                    addLog(`🔄 移动: "${node.text}" → 目标ID: ${targetId} (${position})`, 'move');
+                    addLog(`🔄 移动: "${node.text}" → 目标: ${targetId} (${position})`, 'move');
                     rightData = $('#rightTree').data('treeData');
                 },
                 onDragStart: function(node, treeId) {
@@ -187,7 +210,6 @@
         
         initRightTree();
         
-        // 重置右侧树
         $('#resetRight').on('click', function() {
             rightData = [
                 { id: "R1", text: "我的收藏", children: [
@@ -207,7 +229,6 @@
             addLog('🔄 右侧树已重置', 'info');
         });
         
-        // 全部展开/折叠
         function setAllCollapsed($tree, collapsed) {
             $tree.find('.node-children').each(function() {
                 const $children = $(this);
