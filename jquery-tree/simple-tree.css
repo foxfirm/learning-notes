@@ -58,6 +58,7 @@
     box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
 }
 
+/* 折叠/展开箭头 */
 .simple-tree .toggle-icon {
     display: inline-flex;
     align-items: center;
@@ -74,6 +75,26 @@
 .simple-tree .toggle-icon.empty {
     visibility: hidden;
     cursor: default;
+}
+
+/* 节点图标 */
+.simple-tree .node-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+/* 目录节点图标（有子节点）- 文件夹 */
+.simple-tree .tree-node.folder .node-icon {
+    color: #f0ad4e;
+}
+
+/* 叶子节点图标（无子节点）- 文件 */
+.simple-tree .tree-node.leaf .node-icon {
+    color: #6c757d;
 }
 
 .simple-tree .node-content {
@@ -94,11 +115,7 @@
     font-family: inherit;
     pointer-events: none;
     white-space: nowrap;
-}
-
-/* 提示文字 */
-.drop-hint {
-    font-size: 12px;
-    color: #666;
-    margin-left: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }

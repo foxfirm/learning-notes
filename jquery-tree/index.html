@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>SimpleTree - 优化版</title>
+    <title>SimpleTree - 带图标版</title>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <link rel="stylesheet" href="simple-tree.css">
     <script src="simple-tree.js"></script>
@@ -127,8 +127,9 @@
 </div>
 <div class="info">
     💡 使用说明<br>
-    • 从左侧拖拽节点到右侧 → 复制节点（绿色边框=放入内部，蓝色粗边=插入前后）<br>
-    • 右侧内部拖拽节点 → 移动位置（会自动保持原有的折叠状态）<br>
+    • 📁 文件夹节点（有子节点），📄 文件节点（无子节点）<br>
+    • 从左侧拖拽节点到右侧 → 复制节点<br>
+    • 右侧内部拖拽节点 → 移动位置<br>
     • 点击箭头展开/折叠子节点
 </div>
 
@@ -175,6 +176,11 @@
         $('#leftTree').simpleTree({
             data: leftData,
             defaultCollapsed: true,
+            icons: {
+                folder: '📁',
+                folderOpen: '📂',
+                file: '📄'
+            },
             onCopy: function(source, cloned, targetId, position) {
                 addLog(`📋 复制: "${source.text}" → 目标: ${targetId} (${position})`, 'copy');
             },
@@ -190,6 +196,11 @@
             $('#rightTree').simpleTree({
                 data: JSON.parse(JSON.stringify(rightData)),
                 defaultCollapsed: true,
+                icons: {
+                    folder: '📁',
+                    folderOpen: '📂',
+                    file: '📄'
+                },
                 onCopy: function(source, cloned, targetId, position) {
                     addLog(`📋 复制: "${source.text}" → 目标: ${targetId} (${position})`, 'copy');
                     rightData = $('#rightTree').data('treeData');

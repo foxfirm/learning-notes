@@ -1,5 +1,5 @@
 /**
- * SimpleTree - 最终修复版（复制后节点可拖拽）
+ * SimpleTree - 带图标版本
  */
 (function($) {
     'use strict';
@@ -7,6 +7,13 @@
     const defaults = {
         data: [],
         defaultCollapsed: true,
+        // 图标配置
+        icons: {
+            folder: '📁',      // 目录节点图标（有子节点）
+            folderOpen: '📂',  // 展开的目录节点图标（可选）
+            file: '📄',        // 叶子节点图标（无子节点）
+            default: '•'       // 默认图标
+        },
         onCopy: null,
         onMove: null,
         onDragStart: null,
@@ -149,9 +156,22 @@
         });
     }
 
-    // 生成唯一ID
     function generateId() {
         return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+    }
+
+    // 获取节点图标
+    function getNodeIcon(node, isCollapsed, icons) {
+        const hasChildren = node.children && node.children.length > 0;
+        if (hasChildren) {
+            // 目录节点：如果配置了展开图标且当前是展开状态，使用展开图标
+            if (!isCollapsed && icons.folderOpen) {
+                return icons.folderOpen;
+            }
+            return icons.folder;
+        }
+        // 叶子节点
+        return node.icon || icons.file || icons.default || '•';
     }
 
     // ========== 渲染函数 ==========
@@ -167,6 +187,8 @@
             collapsedState = collectCollapsedState($container);
         }
 
+        const icons = options.icons;
+
         function buildHtml(nodes) {
             let html = '<ul>';
             for (let i = 0; i < nodes.length; i++) {
@@ -178,9 +200,15 @@
                 }
                 const collapsedStyle = (hasChildren && isCollapsed) ? 'display: none;' : '';
                 
+                // 获取图标
+                const icon = getNodeIcon(node, isCollapsed, icons);
+                // 添加类型类名，用于 CSS 样式
+                const nodeTypeClass = hasChildren ? 'folder' : 'leaf';
+                
                 html += `<li data-id="${node.id}">`;
-                html += `<div class="tree-node" data-id="${node.id}">`;
+                html += `<div class="tree-node ${nodeTypeClass}" data-id="${node.id}">`;
                 html += `<span class="toggle-icon ${hasChildren ? '' : 'empty'}" data-id="${node.id}">${hasChildren ? (isCollapsed ? '▶' : '▼') : ''}</span>`;
+                html += `<span class="node-icon">${escapeHtml(icon)}</span>`;
                 html += `<span class="node-content">${escapeHtml(node.text)}</span>`;
                 html += `</div>`;
                 if (hasChildren) {
@@ -212,13 +240,28 @@
             const $node = $icon.closest('.tree-node');
             const $li = $node.closest('li');
             const $children = $li.children('.node-children');
+            const nodeId = $node.data('id');
             
             if ($children.length && $children.is(':visible')) {
                 $children.hide();
                 $icon.text('▶');
+                // 更新图标为文件夹图标（折叠状态）
+                const $iconSpan = $node.find('.node-icon');
+                const treeData = $container.data('treeData');
+                const nodeInfo = findNode(treeData, nodeId);
+                if (nodeInfo && nodeInfo.node.children && nodeInfo.node.children.length) {
+                    $iconSpan.text(options.icons.folder);
+                }
             } else if ($children.length) {
                 $children.show();
                 $icon.text('▼');
+                // 更新图标为展开文件夹图标（如果有配置）
+                const $iconSpan = $node.find('.node-icon');
+                const treeData = $container.data('treeData');
+                const nodeInfo = findNode(treeData, nodeId);
+                if (nodeInfo && nodeInfo.node.children && nodeInfo.node.children.length) {
+                    $iconSpan.text(options.icons.folderOpen || options.icons.folder);
+                }
             }
         });
 
@@ -227,6 +270,7 @@
         $container.on('mousedown.simpleTree', '.tree-node', function(e) {
             if (e.which !== 1) return;
             if ($(e.target).hasClass('toggle-icon')) return;
+            if ($(e.target).hasClass('node-icon')) return;
             
             e.preventDefault();
             startDrag(e, this, $container, options);
@@ -256,7 +300,6 @@
         
         if (!nodeInfo) {
             console.warn('找不到节点数据', nodeId);
-            console.log('当前树数据:', treeData);
             return;
         }
         
@@ -267,8 +310,12 @@
         
         $node.addClass('dragging');
         
+        // 获取节点图标用于克隆体
+        const hasChildren = nodeInfo.node.children && nodeInfo.node.children.length > 0;
+        const icon = hasChildren ? options.icons.folder : options.icons.file;
+        
         dragState.clone = $('<div class="simple-tree-clone">')
-            .text(nodeInfo.node.text)
+            .html(`<span>${escapeHtml(icon)}</span><span>${escapeHtml(nodeInfo.node.text)}</span>`)
             .css({ top: e.clientY + 10, left: e.clientX + 10 })
             .appendTo('body');
         
@@ -358,7 +405,6 @@
         const sourceTree = dragState.sourceTree;
         const sourceId = dragState.sourceId;
         
-        // 查找目标树
         let targetTree = null;
         $('.simple-tree').each(function() {
             if ($(this).find(`[data-id="${targetId}"]`).length > 0) {
@@ -376,18 +422,17 @@
         // 左 -> 右（复制）
         if (sourceTreeId === 'leftTree' && targetTreeId === 'rightTree') {
             let targetData = targetTree.data('treeData');
-            // 深拷贝目标数据
             targetData = JSON.parse(JSON.stringify(targetData));
             targetTree.data('treeData', targetData);
             
             const cloned = cloneNode(sourceNode);
-            // 生成全新ID，确保唯一
             cloned.id = generateId();
             
             if (insertNode(targetData, targetId, cloned, position)) {
                 targetTree.data('treeData', targetData);
                 renderTree(targetTree, targetData, { 
                     defaultCollapsed: options.defaultCollapsed,
+                    icons: options.icons,
                     onCopy: options.onCopy,
                     onMove: options.onMove,
                     onDragStart: options.onDragStart,
@@ -415,6 +460,7 @@
                 targetTree.data('treeData', targetData);
                 renderTree(targetTree, targetData, { 
                     defaultCollapsed: options.defaultCollapsed,
+                    icons: options.icons,
                     onCopy: options.onCopy,
                     onMove: options.onMove,
                     onDragStart: options.onDragStart,
@@ -457,7 +503,7 @@
     // ========== 插件入口 ==========
     
     $.fn.simpleTree = function(userOptions) {
-        const options = $.extend({}, defaults, userOptions);
+        const options = $.extend(true, {}, defaults, userOptions);
         
         return this.each(function() {
             const $this = $(this);
