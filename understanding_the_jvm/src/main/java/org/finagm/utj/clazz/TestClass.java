@@ -13,7 +13,12 @@ package org.finagm.utj.clazz;
 public class TestClass {
     private int m;
 
+    public static void main(String[] args) {
+        TestClass t = new TestClass();
+        System.out.println(t.inc());
+    }
+
     public int inc() {
-        return m + 1;
+        return m++;
     }
 }
