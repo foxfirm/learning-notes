@@ -2,51 +2,49 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>jQuery DragTree - 测试右侧拖拽</title>
+    <title>SimpleTree - 简洁拖拽树</title>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <link rel="stylesheet" href="dragtree.css">
-    <script src="jquery.dragtree.js"></script>
+    <link rel="stylesheet" href="simple-tree.css">
+    <script src="simple-tree.js"></script>
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
             background: #f0f2f5;
+            padding: 40px;
         }
-        .demo-container {
+        .container {
             display: flex;
             gap: 40px;
-            padding: 40px;
             justify-content: center;
             flex-wrap: wrap;
         }
-        .tree {
-            width: 360px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            padding: 12px;
-            background: #fafafa;
+        .tree-panel {
+            width: 350px;
+            background: white;
+            border-radius: 12px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
         }
-        .tree h3 {
-            margin-top: 0;
+        .tree-panel h3 {
+            margin: 0;
+            padding: 15px;
+            background: #f5f5f5;
+            border-bottom: 1px solid #ddd;
             text-align: center;
             font-size: 16px;
-            color: #333;
         }
-        .info {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            font-size: 14px;
-            border-top: 1px solid #ddd;
-            margin-top: 20px;
+        .tree-panel .simple-tree {
+            padding: 12px;
+            min-height: 400px;
+            max-height: 500px;
+            overflow-y: auto;
         }
         .log-panel {
-            margin: 20px auto;
-            width: 80%;
+            margin-top: 30px;
             background: #1e1e1e;
             color: #d4d4d4;
+            border-radius: 8px;
             padding: 12px;
-            border-radius: 6px;
             font-family: monospace;
             font-size: 12px;
             max-height: 200px;
@@ -57,8 +55,14 @@
             color: #ddd;
         }
         .log-entry {
-            border-bottom: 1px solid #333;
             padding: 4px 0;
+            border-bottom: 1px solid #333;
+        }
+        .info {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 14px;
         }
         button {
             padding: 4px 12px;
@@ -68,155 +72,115 @@
     </style>
 </head>
 <body>
-<div class="demo-container">
-    <div class="tree" id="leftTree">
-        <h3>📂 左侧树（可复制到右侧）</h3>
+<div class="container">
+    <!-- 左侧树 -->
+    <div class="tree-panel">
+        <h3>📂 左侧树（拖拽复制 →）</h3>
+        <div id="leftTree"></div>
     </div>
-    <div class="tree" id="rightTree">
+    
+    <!-- 右侧树 -->
+    <div class="tree-panel">
         <h3>🎯 右侧树（内部可拖拽移动）</h3>
-        <div style="text-align:center; margin-bottom:10px;">
+        <div style="padding: 8px; text-align: center; background: #fafafa;">
             <button id="expandAll">全部展开</button>
             <button id="collapseAll">全部折叠</button>
-            <button id="resetRight">重置右侧树</button>
+            <button id="resetRight">重置右侧</button>
         </div>
+        <div id="rightTree"></div>
     </div>
 </div>
+
 <div class="log-panel" id="logPanel">
     <h4>📋 操作日志</h4>
     <div class="log-entry">初始化完成，开始拖拽测试...</div>
 </div>
 <div class="info">
-    💡 <strong>测试步骤</strong><br>
-    1. 从左侧拖拽节点到右侧 → 应该复制节点<br>
-    2. 在右侧内部拖拽任意节点到另一个节点上/下/内部 → 应该移动位置<br>
-    3. 右侧树拖拽时目标节点会有<strong>蓝色虚线边框</strong>高亮
+    💡 使用说明<br>
+    • 从左侧拖拽节点到右侧 → 复制节点<br>
+    • 右侧内部拖拽节点到另一个节点上/下/内部 → 移动位置<br>
+    • 点击箭头展开/折叠子节点
 </div>
 
 <script>
     $(function() {
-        // 日志记录
-        function addLog(msg, type = 'info') {
-            const colors = { info: '#8bc34a', copy: '#64b5f6', move: '#ffb74d', error: '#ef5350' };
+        // 日志
+        function addLog(msg, type) {
+            const colors = { copy: '#64b5f6', move: '#ffb74d', error: '#ef5350', info: '#8bc34a' };
             const logHtml = `<div class="log-entry" style="color: ${colors[type] || colors.info}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
             $('#logPanel').append(logHtml);
             $('#logPanel').scrollTop($('#logPanel')[0].scrollHeight);
         }
         
         // 左侧树数据
-        const leftTreeData = [
-            {
-                id: "L1",
-                text: "前端框架",
-                children: [
-                    { id: "L1-1", text: "Vue.js", children: [] },
-                    { id: "L1-2", text: "React", children: [] },
-                    { id: "L1-3", text: "Angular", children: [] }
-                ]
-            },
-            {
-                id: "L2",
-                text: "构建工具",
-                children: [
-                    { id: "L2-1", text: "Webpack", children: [] },
-                    { id: "L2-2", text: "Vite", children: [] }
-                ]
-            },
-            {
-                id: "L3",
-                text: "CSS方案",
-                children: [
-                    { id: "L3-1", text: "Tailwind", children: [] },
-                    { id: "L3-2", text: "CSS Modules", children: [] }
-                ]
-            }
+        const leftData = [
+            { id: "L1", text: "前端框架", children: [
+                { id: "L1-1", text: "Vue.js" },
+                { id: "L1-2", text: "React" },
+                { id: "L1-3", text: "Angular" }
+            ]},
+            { id: "L2", text: "构建工具", children: [
+                { id: "L2-1", text: "Webpack" },
+                { id: "L2-2", text: "Vite" }
+            ]},
+            { id: "L3", text: "CSS方案", children: [
+                { id: "L3-1", text: "Tailwind" },
+                { id: "L3-2", text: "CSS Modules" }
+            ]}
         ];
         
-        // 右侧树数据（初始有一些节点）
-        const rightTreeData = [
-            {
-                id: "R1",
-                text: "我的收藏",
-                children: [
-                    { id: "R1-1", text: "jQuery 技巧", children: [] },
-                    { id: "R1-2", text: "CSS Grid 布局", children: [] }
-                ]
-            },
-            {
-                id: "R2",
-                text: "待学习清单",
-                children: [
-                    { id: "R2-1", text: "TypeScript", children: [] },
-                    { 
-                        id: "R2-2", 
-                        text: "Node.js 进阶", 
-                        children: [
-                            { id: "R2-2-1", text: "Express", children: [] },
-                            { id: "R2-2-2", text: "Nest.js", children: [] }
-                        ]
-                    }
-                ]
-            },
-            {
-                id: "R3",
-                text: "已完成",
-                children: []
-            }
+        // 右侧树数据
+        let rightData = [
+            { id: "R1", text: "我的收藏", children: [
+                { id: "R1-1", text: "jQuery技巧" },
+                { id: "R1-2", text: "CSS Grid" }
+            ]},
+            { id: "R2", text: "待学习", children: [
+                { id: "R2-1", text: "TypeScript" },
+                { id: "R2-2", text: "Node.js", children: [
+                    { id: "R2-2-1", text: "Express" },
+                    { id: "R2-2-2", text: "Nest.js" }
+                ]}
+            ]},
+            { id: "R3", text: "已完成", children: [] }
         ];
         
         // 初始化左侧树
-        $('#leftTree').dragtree({
-            data: leftTreeData,
+        $('#leftTree').simpleTree({
+            data: leftData,
             defaultCollapsed: true,
-            enableLeftToRight: true,
-            enableRightReorder: false,
-            onCopy: function(source, cloned, target, position) {
-                addLog(`📋 复制: "${source.text}" → 目标: "${target.text}" (位置: ${position})`, 'copy');
+            onCopy: function(source, cloned, targetId, position) {
+                addLog(`📋 复制: "${source.text}" → 目标ID: ${targetId} (${position})`, 'copy');
             },
-            onDragStart: function(li, type) {
-                addLog(`🚀 开始拖拽: "${$(li).find('.node-text').text()}"`, 'info');
+            onDragStart: function(node, treeId) {
+                addLog(`🚀 开始拖拽: "${node.text}" (${treeId})`, 'info');
             },
-            onDragEnd: function(li, target, success) {
-                if (!success) addLog(`❌ 拖拽取消`, 'error');
+            onDragEnd: function(node, success) {
+                if (!success) addLog(`❌ 拖拽取消: "${node.text}"`, 'error');
+                else addLog(`✅ 拖拽完成: "${node.text}"`, 'info');
             }
         });
         
-        // 初始化右侧树（重点测试内部拖拽）
-        let currentRightData = JSON.parse(JSON.stringify(rightTreeData));
-        
+        // 初始化右侧树
         function initRightTree() {
-            $('#rightTree').dragtree({
-                data: currentRightData,
+            $('#rightTree').simpleTree({
+                data: JSON.parse(JSON.stringify(rightData)),
                 defaultCollapsed: true,
-                enableLeftToRight: true,
-                enableRightReorder: true,  // 开启内部拖拽重排
-                onCopy: function(source, cloned, target, position) {
-                    addLog(`📋 复制: "${source.text}" → 目标: "${target.text}" (位置: ${position})`, 'copy');
+                onCopy: function(source, cloned, targetId, position) {
+                    addLog(`📋 复制: "${source.text}" → 目标ID: ${targetId} (${position})`, 'copy');
                     // 更新内部数据引用
-                    currentRightData = $('#rightTree').data('dragtree-data');
+                    rightData = $('#rightTree').data('treeData');
                 },
-                onMove: function(node, target, position) {
-                    addLog(`🔄 移动: "${node.text}" → 目标: "${target.text}" (位置: ${position})`, 'move');
-                    // 移动后更新数据引用
-                    currentRightData = $('#rightTree').data('dragtree-data');
-                    console.log('移动后的右侧树数据:', currentRightData);
+                onMove: function(node, targetId, position) {
+                    addLog(`🔄 移动: "${node.text}" → 目标ID: ${targetId} (${position})`, 'move');
+                    rightData = $('#rightTree').data('treeData');
                 },
-                onDragStart: function(li, type) {
-                    addLog(`🚀 开始拖拽: "${$(li).find('.node-text').text()}" (内部移动)`, 'info');
+                onDragStart: function(node, treeId) {
+                    addLog(`🚀 开始拖拽: "${node.text}" (内部移动)`, 'info');
                 },
-                onDragEnd: function(li, target, success) {
-                    if (success) {
-                        addLog(`✅ 拖拽完成`, 'move');
-                    } else {
-                        addLog(`❌ 拖拽取消或无效`, 'error');
-                    }
-                },
-                onToggle: function(node, state) {
-                    addLog(`🔽 ${state === 'expanded' ? '展开' : '折叠'}: "${node.text}"`, 'info');
-                },
-                renderNode: function(node) {
-                    const hasChildren = node.children && node.children.length > 0;
-                    const icon = hasChildren ? '📁' : '📄';
-                    return `${icon} <span class="node-text">${escapeHtml(node.text)}</span>`;
+                onDragEnd: function(node, success) {
+                    if (success) addLog(`✅ 移动完成: "${node.text}"`, 'move');
+                    else addLog(`❌ 移动取消: "${node.text}"`, 'error');
                 }
             });
         }
@@ -225,49 +189,50 @@
         
         // 重置右侧树
         $('#resetRight').on('click', function() {
-            currentRightData = JSON.parse(JSON.stringify(rightTreeData));
+            rightData = [
+                { id: "R1", text: "我的收藏", children: [
+                    { id: "R1-1", text: "jQuery技巧" },
+                    { id: "R1-2", text: "CSS Grid" }
+                ]},
+                { id: "R2", text: "待学习", children: [
+                    { id: "R2-1", text: "TypeScript" },
+                    { id: "R2-2", text: "Node.js", children: [
+                        { id: "R2-2-1", text: "Express" },
+                        { id: "R2-2-2", text: "Nest.js" }
+                    ]}
+                ]},
+                { id: "R3", text: "已完成", children: [] }
+            ];
             initRightTree();
-            addLog(`🔄 已重置右侧树`, 'info');
+            addLog('🔄 右侧树已重置', 'info');
         });
         
         // 全部展开/折叠
-        $('#expandAll').on('click', function() {
-            $('#rightTree').find('li').each(function() {
-                const $li = $(this);
-                const $icon = $li.children('.node-wrapper').children('.toggle-icon');
-                const hasChildren = $li.children('ul').length > 0;
-                if (hasChildren && $li.hasClass('collapsed')) {
-                    $li.removeClass('collapsed');
-                    $icon.text('▼');
+        function setAllCollapsed($tree, collapsed) {
+            $tree.find('.node-children').each(function() {
+                const $children = $(this);
+                const $icon = $children.closest('li').find('.toggle-icon');
+                if ($children.length) {
+                    if (collapsed) {
+                        $children.hide();
+                        $icon.text('▶');
+                    } else {
+                        $children.show();
+                        $icon.text('▼');
+                    }
                 }
-            });
-            addLog(`📂 全部展开`, 'info');
-        });
-        
-        $('#collapseAll').on('click', function() {
-            $('#rightTree').find('li').each(function() {
-                const $li = $(this);
-                const $icon = $li.children('.node-wrapper').children('.toggle-icon');
-                const hasChildren = $li.children('ul').length > 0;
-                if (hasChildren && !$li.hasClass('collapsed')) {
-                    $li.addClass('collapsed');
-                    $icon.text('▶');
-                }
-            });
-            addLog(`📁 全部折叠`, 'info');
-        });
-        
-        function escapeHtml(str) {
-            if (!str) return '';
-            return String(str).replace(/[&<>]/g, function(m) {
-                if (m === '&') return '&amp;';
-                if (m === '<') return '&lt;';
-                if (m === '>') return '&gt;';
-                return m;
             });
         }
         
-        addLog('✨ 初始化完成，请尝试拖拽右侧树内部节点！', 'info');
+        $('#expandAll').on('click', function() {
+            setAllCollapsed($('#rightTree'), false);
+            addLog('📂 全部展开', 'info');
+        });
+        
+        $('#collapseAll').on('click', function() {
+            setAllCollapsed($('#rightTree'), true);
+            addLog('📁 全部折叠', 'info');
+        });
     });
 </script>
 </body>
