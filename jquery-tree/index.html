@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
-    <title>SimpleTree - 完整优化版</title>
+    <title>SimpleTree - 外部工具栏版</title>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <link rel="stylesheet" href="simple-tree.css">
     <script src="simple-tree.js"></script>
@@ -12,19 +13,22 @@
             background: #f0f2f5;
             padding: 40px;
         }
+
         .container {
             display: flex;
             gap: 40px;
             justify-content: center;
             flex-wrap: wrap;
         }
+
         .tree-panel {
             width: 420px;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             overflow: hidden;
         }
+
         .tree-panel h3 {
             margin: 0;
             padding: 15px;
@@ -33,12 +37,73 @@
             text-align: center;
             font-size: 16px;
         }
+
         .tree-panel .simple-tree {
             padding: 12px;
             min-height: 400px;
             max-height: 500px;
             overflow-y: auto;
         }
+
+        .toolbar {
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            background: #fafafa;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .toolbar button {
+            padding: 4px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .toolbar .add-btn {
+            background: #28a745;
+            color: white;
+        }
+
+        .toolbar .add-btn:hover {
+            background: #218838;
+        }
+
+        .toolbar .delete-btn {
+            background: #dc3545;
+            color: white;
+        }
+
+        .toolbar .delete-btn:hover {
+            background: #c82333;
+        }
+
+        .toolbar .search-input {
+            flex: 1;
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .toolbar .search-input:focus {
+            border-color: #0078d4;
+        }
+
+        .toolbar .search-clear {
+            background: #6c757d;
+            color: white;
+        }
+
+        .toolbar .search-clear:hover {
+            background: #5a6268;
+        }
+
         .log-panel {
             margin-top: 30px;
             background: #1e1e1e;
@@ -50,20 +115,24 @@
             max-height: 200px;
             overflow-y: auto;
         }
+
         .log-panel h4 {
             margin: 0 0 8px 0;
             color: #ddd;
         }
+
         .log-entry {
             padding: 4px 0;
             border-bottom: 1px solid #333;
         }
+
         .info {
             text-align: center;
             margin-top: 20px;
             color: #666;
             font-size: 14px;
         }
+
         .legend {
             display: flex;
             justify-content: center;
@@ -74,217 +143,277 @@
             background: #fafafa;
             border-bottom: 1px solid #eee;
         }
+
         .legend-item {
             display: inline-flex;
             align-items: center;
             gap: 6px;
         }
+
         .legend-before {
             width: 30px;
             height: 3px;
             background: #0078d4;
         }
+
         .legend-after {
             width: 30px;
             height: 3px;
             background: #0078d4;
         }
+
         .legend-inside {
             width: 30px;
             height: 3px;
             background: #28a745;
         }
-        button {
-            padding: 4px 12px;
-            margin: 0 4px;
-            cursor: pointer;
-        }
     </style>
 </head>
+
 <body>
-<div class="container">
-    <div class="tree-panel">
-        <h3>📂 左侧树（拖拽复制 →）</h3>
-        <div id="leftTree"></div>
-    </div>
-    
-    <div class="tree-panel">
-        <h3>🎯 右侧树（可拖拽移动、添加/删除节点）</h3>
-        <div class="legend">
-            <span class="legend-item"><span class="legend-before"></span> 插入上方</span>
-            <span class="legend-item"><span class="legend-after"></span> 插入下方</span>
-            <span class="legend-item"><span class="legend-inside"></span> 插入内部</span>
-            <span class="legend-item">✅ 可放置</span>
-            <span class="legend-item">❌ 不可放置</span>
+    <div class="container">
+        <!-- 左侧树 -->
+        <div class="tree-panel">
+            <h3>📂 左侧树（拖拽复制 →）</h3>
+            <div id="leftTree"></div>
         </div>
-        <div id="rightTree"></div>
+
+        <!-- 右侧树 -->
+        <div class="tree-panel">
+            <h3>🎯 右侧树（可拖拽移动、添加/删除节点）</h3>
+            <div class="legend">
+                <span class="legend-item"><span class="legend-before"></span> 插入上方</span>
+                <span class="legend-item"><span class="legend-after"></span> 插入下方</span>
+                <span class="legend-item"><span class="legend-inside"></span> 插入内部</span>
+                <span class="legend-item">✅ 可放置</span>
+                <span class="legend-item">❌ 不可放置</span>
+            </div>
+            <div class="toolbar">
+                <button class="add-btn" id="addNodeBtn">➕ 添加节点</button>
+                <button class="delete-btn" id="deleteNodeBtn">🗑 删除节点</button>
+                <input type="text" class="search-input" id="searchInput" placeholder="🔍 搜索节点...">
+                <button class="search-clear" id="clearSearchBtn">✖ 清除</button>
+                <button class="expand-btn" id="expandAllBtn" style="background:#0078d4;color:white;">📂 全部展开</button>
+                <button class="collapse-btn" id="collapseAllBtn" style="background:#6c757d;color:white;">📁
+                    全部折叠</button>
+                <button class="json-btn" id="exportJsonBtn" style="background:#17a2b8;color:white;">📋 导出JSON</button>
+            </div>
+            <div id="rightTree"></div>
+        </div>
     </div>
-</div>
 
-<div class="log-panel" id="logPanel">
-    <h4>📋 操作日志</h4>
-    <div class="log-entry">初始化完成，开始拖拽测试...</div>
-</div>
-<div class="info">
-    💡 <strong>使用说明</strong><br>
-    • 📁 文件夹节点，📄 文件节点<br>
-    • 从左侧拖拽节点到右侧 → 复制节点（重复名称会❌提示，无法放置）<br>
-    • 右侧内部拖拽节点 → 移动位置（✅/❌实时提示）<br>
-    • <strong>双击文件夹</strong> → 展开/折叠子节点<br>
-    • <strong>鼠标悬浮</strong> → 高亮显示<br>
-    • <strong>点击节点</strong> → 选中（蓝色高亮），然后可添加子节点或删除<br>
-    • <strong>➕ 添加节点</strong> → 有选中节点时添加为子节点，否则添加到根目录<br>
-    • <strong>🗑 删除节点</strong> → 删除选中的节点（含子节点会提示）<br>
-    • 🔍 搜索 → 自动展开并高亮匹配节点
-</div>
+    <div class="log-panel" id="logPanel">
+        <h4>📋 操作日志</h4>
+        <div class="log-entry">初始化完成，开始拖拽测试...</div>
+    </div>
+    <div class="info">
+        💡 <strong>使用说明</strong><br>
+        • 📁 文件夹节点，📄 文件节点<br>
+        • 从左侧拖拽节点到右侧 → 复制节点（重复名称会❌提示，无法放置）<br>
+        • 右侧内部拖拽节点 → 移动位置（✅/❌实时提示）<br>
+        • <strong>双击文件夹</strong> → 展开/折叠子节点<br>
+        • <strong>点击节点</strong> → 选中（蓝色高亮），然后可添加子节点或删除<br>
+        • <strong>➕ 添加节点</strong> → 有选中节点时添加为子节点，否则添加到根目录<br>
+        • <strong>🗑 删除节点</strong> → 删除选中的节点<br>
+        • 🔍 搜索 → 自动展开并高亮匹配节点<br>
+        • 📋 导出JSON → 将树转换为带pId的JSON格式
+    </div>
 
-<script>
-    $(function() {
-        function addLog(msg, type) {
-            const colors = { copy: '#64b5f6', move: '#ffb74d', error: '#ef5350', info: '#8bc34a', add: '#28a745', delete: '#dc3545' };
-            const logHtml = `<div class="log-entry" style="color: ${colors[type] || colors.info}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
-            $('#logPanel').append(logHtml);
-            $('#logPanel').scrollTop($('#logPanel')[0].scrollHeight);
-        }
-        
-        const leftData = [
-            { id: "L1", text: "前端框架", children: [
-                { id: "L1-1", text: "Vue.js" },
-                { id: "L1-2", text: "React" },
-                { id: "L1-3", text: "Angular" }
-            ]},
-            { id: "L2", text: "构建工具", children: [
-                { id: "L2-1", text: "Webpack" },
-                { id: "L2-2", text: "Vite" }
-            ]},
-            { id: "L3", text: "CSS方案", children: [
-                { id: "L3-1", text: "Tailwind" },
-                { id: "L3-2", text: "CSS Modules" }
-            ]}
-        ];
-        
-        let rightData = [
-            { id: "R1", text: "我的收藏", children: [
-                { id: "R1-1", text: "jQuery技巧" },
-                { id: "R1-2", text: "CSS Grid" }
-            ]},
-            { id: "R2", text: "待学习", children: [
-                { id: "R2-1", text: "TypeScript" },
-                { id: "R2-2", text: "Node.js", children: [
-                    { id: "R2-2-1", text: "Express" },
-                    { id: "R2-2-2", text: "Nest.js" }
-                ]}
-            ]},
-            { id: "R3", text: "已完成", children: [] }
-        ];
-        
-        $('#leftTree').simpleTree({
-            data: leftData,
-            defaultCollapsed: true,
-            duplicateCheck: true,
-            treeType: 'left',
-            icons: {
-                folder: '📁',
-                folderOpen: '📂',
-                file: '📄'
-            },
-            onCopy: function(source, cloned, targetId, position) {
-                addLog(`📋 复制: "${source.text}" → ${targetId || '根节点'} (${position})`, 'copy');
-            },
-            onDragStart: function(node, treeId) {
-                addLog(`🚀 开始拖拽: "${node.text}"`, 'info');
-            },
-            onDragEnd: function(node, success) {
-                if (success) addLog(`✅ 拖拽成功: "${node.text}"`, 'info');
-                else addLog(`❌ 拖拽取消: "${node.text}"`, 'error');
+    <script>
+        $(function () {
+            function addLog(msg, type) {
+                const colors = { copy: '#64b5f6', move: '#ffb74d', error: '#ef5350', info: '#8bc34a', add: '#28a745', delete: '#dc3545' };
+                const logHtml = `<div class="log-entry" style="color: ${colors[type] || colors.info}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+                $('#logPanel').append(logHtml);
+                $('#logPanel').scrollTop($('#logPanel')[0].scrollHeight);
             }
-        });
-        
-        function initRightTree() {
-            $('#rightTree').simpleTree({
-                data: JSON.parse(JSON.stringify(rightData)),
-                defaultCollapsed: true,
-                duplicateCheck: true,
-                treeType: 'right',
-                duplicateMessage: '节点 "{name}" 已存在，不能重复添加',
-                icons: {
-                    folder: '📁',
-                    folderOpen: '📂',
-                    file: '📄'
+
+            // 左侧树数据
+            const leftData = [
+                {
+                    id: "L1", text: "前端框架", children: [
+                        { id: "L1-1", text: "Vue.js" },
+                        { id: "L1-2", text: "React" },
+                        { id: "L1-3", text: "Angular" }
+                    ]
                 },
-                onCopy: function(source, cloned, targetId, position) {
-                    addLog(`📋 复制: "${source.text}" → ${targetId || '根节点'} (${position})`, 'copy');
-                    rightData = $('#rightTree').data('treeData');
+                {
+                    id: "L2", text: "构建工具", children: [
+                        { id: "L2-1", text: "Webpack" },
+                        { id: "L2-2", text: "Vite" }
+                    ]
                 },
-                onMove: function(node, targetId, position) {
-                    addLog(`🔄 移动: "${node.text}" → ${targetId} (${position})`, 'move');
-                    rightData = $('#rightTree').data('treeData');
-                },
-                onAddNode: function(node, parentId) {
-                    addLog(`➕ 添加节点: "${node.text}" → ${parentId ? '子节点' : '根节点'}`, 'add');
-                    rightData = $('#rightTree').data('treeData');
-                },
-                onDeleteNode: function(node) {
-                    addLog(`🗑 删除节点: "${node.text}"`, 'delete');
-                    rightData = $('#rightTree').data('treeData');
-                },
-                onDragStart: function(node, treeId) {
-                    addLog(`🚀 开始拖拽: "${node.text}" (内部移动)`, 'info');
-                },
-                onDragEnd: function(node, success) {
-                    if (success) addLog(`✅ 移动成功: "${node.text}"`, 'move');
-                    else addLog(`❌ 移动取消: "${node.text}"`, 'error');
+                {
+                    id: "L3", text: "CSS方案", children: [
+                        { id: "L3-1", text: "Tailwind" },
+                        { id: "L3-2", text: "CSS Modules" }
+                    ]
                 }
-            });
-        }
-        
-        initRightTree();
-        
-        $('#resetRight').on('click', function() {
-            rightData = [
-                { id: "R1", text: "我的收藏", children: [
-                    { id: "R1-1", text: "jQuery技巧" },
-                    { id: "R1-2", text: "CSS Grid" }
-                ]},
-                { id: "R2", text: "待学习", children: [
-                    { id: "R2-1", text: "TypeScript" },
-                    { id: "R2-2", text: "Node.js", children: [
-                        { id: "R2-2-1", text: "Express" },
-                        { id: "R2-2-2", text: "Nest.js" }
-                    ]}
-                ]},
+            ];
+
+            // 右侧树数据
+            let rightData = [
+                {
+                    id: "R1", text: "我的收藏", children: [
+                        { id: "R1-1", text: "jQuery技巧" },
+                        { id: "R1-2", text: "CSS Grid" }
+                    ]
+                },
+                {
+                    id: "R2", text: "待学习", children: [
+                        { id: "R2-1", text: "TypeScript" },
+                        {
+                            id: "R2-2", text: "Node.js", children: [
+                                { id: "R2-2-1", text: "Express" },
+                                { id: "R2-2-2", text: "Nest.js" }
+                            ]
+                        }
+                    ]
+                },
                 { id: "R3", text: "已完成", children: [] }
             ];
+
+            // 初始化左侧树
+            $('#leftTree').simpleTree({
+                data: leftData,
+                treeType: 'left',
+                defaultCollapsed: true,
+                keepIdOnCopy: true,
+                onDragEnd: function (node, success) {
+                    if (success) {
+                        addLog(`📋 复制成功: "${node.text}"`, 'copy');
+                        // 获取右侧树数据
+                        const rightData = $('#rightTree').simpleTree('getData');
+                        console.log('右侧树数据:', rightData);
+                    }
+                },
+                onDragStart: function (node, type) {
+                    addLog(`🚀 开始拖拽: "${node.text}"`, 'info');
+                }
+            });
+
+            // 初始化右侧树
+            function initRightTree() {
+                $('#rightTree').simpleTree({
+                    data: JSON.parse(JSON.stringify(rightData)),
+                    treeType: 'right',
+                    defaultCollapsed: true,
+                    keepIdOnCopy: true,
+                    onCopy: function (source, cloned, targetId, position) {
+                        addLog(`📋 复制: "${source.text}" → ${targetId || '根节点'} (${position})`, 'copy');
+                        rightData = $('#rightTree').simpleTree('getData');
+                    },
+                    onMove: function (node, targetId, position) {
+                        addLog(`🔄 移动: "${node.text}" → ${targetId} (${position})`, 'move');
+                        rightData = $('#rightTree').simpleTree('getData');
+                    },
+                    onAddNode: function (node, parentId) {
+                        addLog(`➕ 添加节点: "${node.text}" → ${parentId ? '子节点' : '根节点'}`, 'add');
+                        rightData = $('#rightTree').simpleTree('getData');
+                    },
+                    onDeleteNode: function (node) {
+                        addLog(`🗑 删除节点: "${node.text}"`, 'delete');
+                        rightData = $('#rightTree').simpleTree('getData');
+                    },
+                    onDragStart: function (node, type) {
+                        addLog(`🚀 开始拖拽: "${node.text}" (内部移动)`, 'info');
+                    },
+                    onDragEnd: function (node, success) {
+                        if (success) addLog(`✅ 移动成功: "${node.text}"`, 'move');
+                        else addLog(`❌ 移动取消: "${node.text}"`, 'error');
+                    }
+                });
+            }
+
             initRightTree();
-            addLog('🔄 右侧树已重置', 'info');
-        });
-        
-        function setAllCollapsed($tree, collapsed) {
-            $tree.find('.node-children').each(function() {
-                const $children = $(this);
-                const $icon = $children.closest('li').find('.toggle-icon');
-                if ($children.length) {
-                    if (collapsed) {
-                        $children.hide();
-                        $icon.text('▶');
-                    } else {
-                        $children.show();
-                        $icon.text('▼');
+
+            // ========== 外部调用方法 ==========
+
+            // 添加节点
+            $('#addNodeBtn').on('click', function () {
+                const selectedNode = $('#rightTree').simpleTree('getSelected');
+                const targetId = selectedNode ? selectedNode.id : null;
+                const nodeName = prompt('请输入节点名称：', '新节点');
+                if (nodeName) {
+                    const result = $('#rightTree').simpleTree('addNode', nodeName, targetId);
+                    if (result) {
+                        addLog(`➕ 添加节点成功: "${nodeName}"`, 'add');
                     }
                 }
             });
-        }
-        
-        $('#expandAll').on('click', function() {
-            setAllCollapsed($('#rightTree'), false);
-            addLog('📂 全部展开', 'info');
+
+            // 删除选中的节点
+            $('#deleteNodeBtn').on('click', function () {
+                $('#rightTree').simpleTree('deleteSelected');
+            });
+
+            // 搜索节点
+            let searchTimeout;
+            $('#searchInput').on('input', function () {
+                clearTimeout(searchTimeout);
+                const keyword = $(this).val();
+                searchTimeout = setTimeout(() => {
+                    $('#rightTree').simpleTree('search', keyword);
+                }, 300);
+            });
+
+            // 清除搜索
+            $('#clearSearchBtn').on('click', function () {
+                $('#searchInput').val('');
+                $('#rightTree').simpleTree('clearSearch');
+                addLog('🔍 已清除搜索', 'info');
+            });
+
+            // 全部展开
+            $('#expandAllBtn').on('click', function () {
+                $('#rightTree').simpleTree('expandAll');
+                addLog('📂 全部展开', 'info');
+            });
+
+            // 全部折叠
+            $('#collapseAllBtn').on('click', function () {
+                $('#rightTree').simpleTree('collapseAll');
+                addLog('📁 全部折叠', 'info');
+            });
+
+            // 导出JSON
+            $('#exportJsonBtn').on('click', function () {
+                const jsonStr = $('#rightTree').simpleTree('toJson', true);
+                console.log('JSON数据:', jsonStr);
+                addLog('📋 已导出JSON，请在控制台查看', 'info');
+
+                // 也可以复制到剪贴板
+                // navigator.clipboard.writeText(jsonStr);
+                alert('JSON数据已输出到控制台');
+            });
+
+            // 重置右侧树按钮（可选）
+            $('#resetRight').on('click', function () {
+                rightData = [
+                    {
+                        id: "R1", text: "我的收藏", children: [
+                            { id: "R1-1", text: "jQuery技巧" },
+                            { id: "R1-2", text: "CSS Grid" }
+                        ]
+                    },
+                    {
+                        id: "R2", text: "待学习", children: [
+                            { id: "R2-1", text: "TypeScript" },
+                            {
+                                id: "R2-2", text: "Node.js", children: [
+                                    { id: "R2-2-1", text: "Express" },
+                                    { id: "R2-2-2", text: "Nest.js" }
+                                ]
+                            }
+                        ]
+                    },
+                    { id: "R3", text: "已完成", children: [] }
+                ];
+                initRightTree();
+                addLog('🔄 右侧树已重置', 'info');
+            });
         });
-        
-        $('#collapseAll').on('click', function() {
-            setAllCollapsed($('#rightTree'), true);
-            addLog('📁 全部折叠', 'info');
-        });
-    });
-</script>
+    </script>
 </body>
+
 </html>
