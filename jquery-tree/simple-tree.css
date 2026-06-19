@@ -1,7 +1,9 @@
-/* simple-tree.css */
+/* simple-tree.css - 完整版（优化光标样式） */
+
+/* ========== 基础样式 ========== */
 .simple-tree {
     user-select: none;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;
     min-height: 200px;
 }
@@ -18,95 +20,64 @@
     padding: 0;
 }
 
+/* ========== 节点样式 ========== */
 .simple-tree .tree-node {
     display: flex;
     align-items: center;
     padding: 6px 8px;
     margin: 2px 0;
-    background: white;
-    border: 1px solid #ddd;
+    background: transparent;
+    border: none;
     border-radius: 6px;
+    /* 【修改1】默认光标：手指 */
     cursor: pointer;
     transition: all 0.15s ease;
     gap: 6px;
 }
 
+/* 【修改2】节点按下时：抓取 */
 .simple-tree .tree-node:active {
     cursor: grabbing;
 }
 
-.simple-tree .tree-node:hover {
-    background: #f0f7ff;
-    border-color: #0078d4;
-    transform: translateX(2px);
-}
-
+/* 【修改3】拖拽中的节点：抓取 + 半透明 */
 .simple-tree .tree-node.dragging {
-    opacity: 0.3;
-    cursor: grabbing;
+    cursor: grabbing !important;
+    opacity: 0.4;
 }
 
-.simple-tree-clone {
-    position: fixed;
-    z-index: 9999;
-    background: white;
-    border-radius: 6px;
-    padding: 6px 12px;
-    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
-    opacity: 0.95;
-    font-size: 14px;
-    font-family: inherit;
-    pointer-events: none;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.simple-tree .tree-node:hover {
+    background: rgba(0, 120, 212, 0.08);
 }
 
-.simple-tree-clone.valid {
-    border: 2px solid #28a745;
-    background: #e8f5e9;
+.simple-tree .tree-node.selected {
+    background: rgba(33, 150, 243, 0.15);
 }
 
-.simple-tree-clone.invalid {
-    border: 2px solid #dc3545;
-    background: #ffe8e8;
-}
-
-.simple-tree-clone .clone-status {
-    font-size: 14px;
-    font-weight: bold;
-}
-
-.simple-tree .tree-node.drag-over-before {
-    border-top: 3px solid #0078d4;
-    border-bottom: 1px solid #ddd;
-    background: #f0f8ff;
-}
-
-.simple-tree .tree-node.drag-over-after {
-    border-bottom: 3px solid #0078d4;
-    border-top: 1px solid #ddd;
-    background: #f0f8ff;
-}
-
-.simple-tree .tree-node.drag-over-inside {
-    border: 2px solid #28a745;
-    background: #e8f5e9;
-    box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
-}
-
+/* ========== 折叠/展开箭头 ========== */
 .simple-tree .toggle-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 18px;
     height: 18px;
-    font-size: 12px;
-    cursor: pointer;
-    color: #666;
     flex-shrink: 0;
-    transition: transform 0.1s;
+    /* 【修改4】箭头保持手指 */
+    cursor: pointer;
+    font-size: 12px;
+    color: #666;
+}
+
+.simple-tree .toggle-icon:active {
+    cursor: pointer;
+}
+
+.simple-tree .toggle-icon:not(.empty)::before {
+    content: "▶";
+}
+
+.simple-tree li:not(.collapsed) > .tree-node .toggle-icon:not(.empty)::before {
+    content: "▼";
 }
 
 .simple-tree .toggle-icon.empty {
@@ -114,38 +85,51 @@
     cursor: default;
 }
 
+/* ========== 节点图标 ========== */
 .simple-tree .node-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 20px;
-    font-size: 14px;
+    height: 20px;
     flex-shrink: 0;
+    font-size: 14px;
 }
 
-.simple-tree .tree-node.folder .node-icon {
-    color: #f0ad4e;
+.simple-tree .tree-node.folder .node-icon::before {
+    content: "📁";
 }
 
-.simple-tree .tree-node.leaf .node-icon {
-    color: #6c757d;
+.simple-tree li:not(.collapsed) > .tree-node.folder .node-icon::before {
+    content: "📂";
 }
 
-.simple-tree .node-content {
-    flex: 1;
+.simple-tree .tree-node.leaf .node-icon::before {
+    content: "📄";
 }
 
+/* ========== 搜索高亮 ========== */
 .simple-tree .tree-node.highlight {
     background: #fff3cd;
-    border: 1px solid #ffc107;
-    box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2);
 }
 
-.simple-tree .tree-node.highlight .node-content {
-    font-weight: bold;
-    color: #856404;
+/* ========== 拖拽放置样式 ========== */
+.simple-tree .tree-node.drag-over-before {
+    border-top: 2px solid #0078d4;
+    background: rgba(0, 120, 212, 0.05);
 }
 
+.simple-tree .tree-node.drag-over-after {
+    border-bottom: 2px solid #0078d4;
+    background: rgba(0, 120, 212, 0.05);
+}
+
+.simple-tree .tree-node.drag-over-inside {
+    background: rgba(40, 167, 69, 0.1);
+    box-shadow: inset 0 0 0 1px #28a745;
+}
+
+/* ========== 空树样式 ========== */
 .simple-tree-empty {
     min-height: 150px;
     border: 2px dashed #ccc;
@@ -173,8 +157,38 @@
     color: #28a745;
 }
 
-.simple-tree .tree-node.selected {
-    background: #e3f2fd;
-    border-color: #2196f3;
-    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+/* ========== 拖拽克隆体 ========== */
+.simple-tree-clone {
+    position: fixed;
+    z-index: 9999;
+    background: white;
+    border-radius: 6px;
+    padding: 6px 12px;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
+    opacity: 0.95;
+    font-size: 14px;
+    pointer-events: none;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.simple-tree-clone.valid {
+    border: 2px solid #28a745;
+    background: #e8f5e9;
+}
+
+.simple-tree-clone.invalid {
+    border: 2px solid #dc3545;
+    background: #ffe8e8;
+}
+
+.simple-tree-clone::before {
+    content: "❌";
+    font-size: 14px;
+}
+
+.simple-tree-clone.valid::before {
+    content: "✅";
 }

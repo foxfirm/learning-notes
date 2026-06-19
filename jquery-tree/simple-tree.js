@@ -1,54 +1,67 @@
 /**
- * SimpleTree - 纯树插件版（不含工具栏）
+ * SimpleTree - 轻量级树形拖拽插件
+ * 依赖: jQuery
+ * 特点: 无内联样式，所有样式通过 CSS 控制
+ * 
+ * 使用方法:
+ *   $('#tree').simpleTree({ data: treeData, treeType: 'right' })
+ *   $('#tree').simpleTree('addNode', { id: 'n1', text: '节点', pId: null })
+ *   $('#tree').simpleTree('getData')
+ *   $('#tree').simpleTree('toJson', true)
  */
-(function ($) {
+(function($) {
     'use strict';
 
+    // ========== 默认配置 ==========
     const defaults = {
-        data: [],
-        defaultCollapsed: true,
-        treeType: 'right',
-        icons: {
-            folder: '📁',
-            folderOpen: '📂',
-            file: '📄',
-            default: '•'
-        },
-        onCopy: null,
-        onMove: null,
-        onDragStart: null,
-        onDragEnd: null,
-        onAddNode: null,
-        onDeleteNode: null,
-        emptyText: '暂无数据，从左侧拖拽节点到这里',
-        allowDropToEmpty: true,
-        duplicateCheck: true,
-        keepIdOnCopy: true
+        data: [],                    // 树数据 [{ id, text, children }]
+        defaultCollapsed: true,     // 默认是否折叠
+        treeType: 'right',          // 树类型: 'left' 只可拖出, 'right' 可拖入可内部移动
+        dragThreshold: 5,           // 拖拽阈值（像素），超过此值才开始拖拽，防止误触发
+        onCopy: null,               // 复制回调 (sourceNode, clonedNode, targetId, position)
+        onMove: null,               // 移动回调 (node, targetId, position)
+        onDragStart: null,          // 拖拽开始回调
+        onDragEnd: null,            // 拖拽结束回调
+        onAddNode: null,            // 添加节点回调
+        onDeleteNode: null,         // 删除节点回调
+        emptyText: '暂无数据，从左侧拖拽节点到这里',  // 空树提示文字
+        allowDropToEmpty: true,     // 是否允许拖拽到空树区域
+        duplicateCheck: true,       // 是否检查节点名称重复
+        keepIdOnCopy: true          // 复制时是否保持原ID
     };
 
+    // ========== 全局拖拽状态 ==========
     let dragState = {
-        sourceNode: null,
-        sourceTree: null,
-        sourceTreeType: null,
-        sourceId: null,
-        clone: null,
-        targetNode: null,
-        targetPosition: null,
-        targetTree: null,
-        isDragging: false,
-        isValidDrop: false
+        sourceNode: null,       // 源节点数据
+        sourceTree: null,       // 源树容器
+        sourceTreeType: null,   // 源树类型 'left'/'right'
+        sourceId: null,         // 源节点ID
+        clone: null,            // 拖拽克隆元素
+        targetNode: null,       // 目标节点元素
+        targetPosition: null,   // 目标位置 'before'/'after'/'inside'/'root'
+        targetTree: null,       // 目标树容器
+        isDragging: false,      // 是否正在拖拽中
+        isValidDrop: false      // 当前是否可放置
     };
 
-    // 存储所有实例的配置和状态
+    // 存储所有实例的内部状态
     const instances = new Map();
 
-    // ========== 工具函数 ==========
-
+    // ========== 辅助函数 ==========
+    
+    /**
+     * 在树数据中查找节点
+     * @param {Array} tree 树数据
+     * @param {string} id 节点ID
+     * @returns {Object|null} 节点信息 { node, parent, index, children }
+     */
     function findNode(tree, id) {
         if (!tree) return null;
         for (let i = 0; i < tree.length; i++) {
             const node = tree[i];
-            if (node.id == id) return { node, parent: null, index: i, children: tree };
+            if (node.id == id) {
+                return { node, parent: null, index: i, children: tree };
+            }
             if (node.children) {
                 const found = findNode(node.children, id);
                 if (found) {
@@ -60,46 +73,66 @@
         return null;
     }
 
-    function findParentId(tree, nodeId, parentId = null) {
-        for (let i = 0; i < tree.length; i++) {
-            const node = tree[i];
-            if (node.id == nodeId) {
-                return parentId;
-            }
-            if (node.children) {
-                const found = findParentId(node.children, nodeId, node.id);
-                if (found !== undefined) return found;
-            }
-        }
-        return null;
-    }
-
+    /**
+     * 检查节点名称是否已存在
+     */
     function isNodeNameExists(tree, name, excludeId = null) {
         if (!tree) return false;
         for (let i = 0; i < tree.length; i++) {
             const node = tree[i];
-            if (node.text === name && node.id !== excludeId) {
-                return true;
-            }
-            if (node.children && isNodeNameExists(node.children, name, excludeId)) {
-                return true;
-            }
+            if (node.text === name && node.id !== excludeId) return true;
+            if (node.children && isNodeNameExists(node.children, name, excludeId)) return true;
         }
         return false;
     }
 
+    /**
+     * 检查节点ID是否已存在
+     */
+    function isNodeIdExists(tree, id, excludeId = null) {
+        if (!tree) return false;
+        for (let i = 0; i < tree.length; i++) {
+            if (tree[i].id == id && tree[i].id !== excludeId) return true;
+            if (tree[i].children && isNodeIdExists(tree[i].children, id, excludeId)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 判断拖拽目标是否有效
+     * 规则:
+     *   - 左树 → 右树: 检查名称是否重复
+     *   - 右树 → 右树: 不能移动到自身或后代
+     *   - 左树 → 左树: 不允许
+     */
     function isValidDropTarget(sourceNode, sourceType, targetType, targetNodeId, targetTreeData) {
+        // 左树拖到右树：检查重复名称
         if (sourceType === 'left' && targetType === 'right') {
             return !isNodeNameExists(targetTreeData, sourceNode.text);
         }
-        else if (sourceType === 'right' && targetType === 'right') {
+        // 右树拖到右树：不能移动到自己或后代
+        if (sourceType === 'right' && targetType === 'right') {
             if (sourceNode.id == targetNodeId) return false;
-            if (isDescendantOfNode(sourceNode, targetNodeId)) return false;
-            return true;
+            return !isDescendant(sourceNode, targetNodeId);
         }
         return false;
     }
 
+    /**
+     * 检查 ancestorId 是否是 descendantId 的祖先
+     */
+    function isDescendant(parentNode, childId) {
+        if (!parentNode?.children) return false;
+        for (const child of parentNode.children) {
+            if (child.id == childId) return true;
+            if (isDescendant(child, childId)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 从树中删除节点
+     */
     function removeNode(tree, id) {
         if (!tree) return false;
         for (let i = 0; i < tree.length; i++) {
@@ -107,13 +140,18 @@
                 tree.splice(i, 1);
                 return true;
             }
-            if (tree[i].children && removeNode(tree[i].children, id)) {
-                return true;
-            }
+            if (tree[i].children && removeNode(tree[i].children, id)) return true;
         }
         return false;
     }
 
+    /**
+     * 插入节点到指定位置
+     * @param {Array} tree 树数据
+     * @param {string} targetId 目标节点ID
+     * @param {Object} newNode 新节点
+     * @param {string} position 'before'/'after'/'inside'
+     */
     function insertNode(tree, targetId, newNode, position) {
         if (!tree) return false;
         for (let i = 0; i < tree.length; i++) {
@@ -129,178 +167,173 @@
                 }
                 return true;
             }
-            if (node.children && insertNode(node.children, targetId, newNode, position)) {
-                return true;
-            }
+            if (node.children && insertNode(node.children, targetId, newNode, position)) return true;
         }
         return false;
     }
 
-    function cloneNode(node, keepId = false) {
-        const cloned = JSON.parse(JSON.stringify(node));
-        if (!keepId) {
-            cloned.id = generateId();
+    /**
+     * 根据父节点ID添加节点（支持多层级查找）
+     */
+    function addNodeByParentId(tree, newNode, parentId) {
+        if (!parentId) {
+            tree.push(newNode);
+            return true;
         }
+        for (let i = 0; i < tree.length; i++) {
+            if (tree[i].id == parentId) {
+                if (!tree[i].children) tree[i].children = [];
+                tree[i].children.push(newNode);
+                return true;
+            }
+            if (tree[i].children && addNodeByParentId(tree[i].children, newNode, parentId)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 克隆节点
+     */
+    function cloneNode(node, keepId) {
+        const cloned = JSON.parse(JSON.stringify(node));
+        if (!keepId) cloned.id = generateId();
         return cloned;
     }
 
-    function isDescendantOfNode(parentNode, childId) {
-        if (!parentNode || !parentNode.children) return false;
-        for (let child of parentNode.children) {
-            if (child.id == childId) return true;
-            if (isDescendantOfNode(child, childId)) return true;
-        }
-        return false;
+    /**
+     * 生成唯一ID
+     */
+    function generateId() {
+        return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
     }
 
+    /**
+     * 收集所有节点的折叠状态
+     */
     function collectCollapsedState($container) {
         const state = {};
-        if (!$container) return state;
-        $container.find('li').each(function () {
+        $container.find('li').each(function() {
             const $li = $(this);
-            const $treeNode = $li.find('.tree-node').first();
-            const nodeId = $treeNode.data('id');
+            const nodeId = $li.data('id');
             if (!nodeId) return;
-
             const $children = $li.children('.node-children');
             if ($children.length && $children.is(':visible') === false) {
-                state[nodeId] = true;
+                state[nodeId] = true;  // true = 折叠
             } else if ($children.length) {
-                state[nodeId] = false;
+                state[nodeId] = false; // false = 展开
             }
         });
         return state;
     }
 
+    /**
+     * 恢复节点的折叠状态
+     */
     function restoreCollapsedState($container, state) {
-        if (!$container) return;
-        $container.find('li').each(function () {
+        $container.find('li').each(function() {
             const $li = $(this);
-            const $treeNode = $li.find('.tree-node').first();
-            const nodeId = $treeNode.data('id');
-            if (!nodeId) return;
-
+            const nodeId = $li.data('id');
+            if (!nodeId || !state.hasOwnProperty(nodeId)) return;
             const $children = $li.children('.node-children');
-            const $icon = $li.find('.toggle-icon');
-
-            if ($children.length && state.hasOwnProperty(nodeId)) {
-                if (state[nodeId] === true) {
-                    $children.hide();
-                    $icon.text('▶');
-                } else {
-                    $children.show();
-                    $icon.text('▼');
-                }
+            if (!$children.length) return;
+            
+            if (state[nodeId] === true) {
+                $children.hide();
+                $li.addClass('collapsed');
+            } else {
+                $children.show();
+                $li.removeClass('collapsed');
             }
         });
     }
 
+    /**
+     * 获取拖拽放置位置（基于鼠标Y坐标比例）
+     */
     function getDropPosition(e, targetEl) {
         if (!targetEl) return 'root';
         const rect = targetEl.getBoundingClientRect();
-        const y = e.clientY;
-        const height = rect.height;
-        const ratio = (y - rect.top) / height;
+        const ratio = (e.clientY - rect.top) / rect.height;
         if (ratio < 0.33) return 'before';
         if (ratio > 0.66) return 'after';
         return 'inside';
     }
 
+    /**
+     * HTML转义
+     */
     function escapeHtml(str) {
         if (!str) return '';
-        return String(str).replace(/[&<>]/g, function (m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
+        return String(str).replace(/[&<>]/g, function(m) {
+            return m === '&' ? '&amp;' : (m === '<' ? '&lt;' : '&gt;');
         });
     }
 
-    function generateId() {
-        return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-    }
-
-    function getNodeIcon(node, isCollapsed, icons) {
-        const hasChildren = node.children && node.children.length > 0;
-        if (hasChildren) {
-            if (!isCollapsed && icons.folderOpen) {
-                return icons.folderOpen;
-            }
-            return icons.folder;
-        }
-        return node.icon || icons.file || icons.default || '•';
-    }
-
-    // ========== 将树转换为带 pId 的数组 ==========
-
+    /**
+     * 将树数据转换为扁平数组（带父节点ID）
+     * 输出格式: [{ id, text, pId }, ...]
+     */
     function treeToArray(nodes, parentId = null, result = []) {
         if (!nodes) return result;
-
-        for (let i = 0; i < nodes.length; i++) {
-            const node = nodes[i];
-            const item = {
-                id: node.id,
-                text: node.text,
-                pId: parentId
-            };
-            if (node.icon) item.icon = node.icon;
-            if (node.type) item.type = node.type;
-
-            result.push(item);
-
-            if (node.children && node.children.length > 0) {
-                treeToArray(node.children, node.id, result);
-            }
+        for (const node of nodes) {
+            result.push({ id: node.id, text: node.text, pId: parentId });
+            if (node.children) treeToArray(node.children, node.id, result);
         }
-
         return result;
     }
 
+    /**
+     * 导出树为JSON字符串
+     */
     function treeToJson($container, pretty = false) {
-        const treeData = $container.data('treeData');
-        const flatArray = treeToArray(treeData);
+        const flatArray = treeToArray($container.data('treeData'));
         return pretty ? JSON.stringify(flatArray, null, 2) : JSON.stringify(flatArray);
     }
 
     // ========== 渲染函数 ==========
-
+    
+    /**
+     * 渲染树
+     * @param {jQuery} $container 容器元素
+     * @param {Array} data 树数据
+     * @param {Object} options 配置项
+     * @param {boolean} preserveState 是否保留折叠状态
+     */
     function renderTree($container, data, options, preserveState = true) {
-        const icons = options.icons;
-        const isEmpty = !data || data.length === 0;
+        const isEmpty = !data || !data.length;
         const instance = instances.get($container[0]);
-
         let collapsedState = {};
+
+        // 保存/恢复折叠状态
         if (preserveState && !isEmpty && instance) {
-            collapsedState = instance.collapsedState || {};
-            if (Object.keys(collapsedState).length === 0) {
-                collapsedState = collectCollapsedState($container);
-            }
+            collapsedState = instance.collapsedState || collectCollapsedState($container);
         }
 
+        /**
+         * 递归构建HTML
+         */
         function buildHtml(nodes) {
             let html = '<ul>';
-            for (let i = 0; i < nodes.length; i++) {
-                const node = nodes[i];
+            for (const node of nodes) {
                 const hasChildren = node.children && node.children.length > 0;
+                // 确定折叠状态
                 let isCollapsed = options.defaultCollapsed;
-                if (preserveState && collapsedState.hasOwnProperty(node.id)) {
+                if (preserveState && collapsedState[node.id] !== undefined) {
                     isCollapsed = collapsedState[node.id];
                 }
                 const collapsedStyle = (hasChildren && isCollapsed) ? 'display: none;' : '';
-
-                const icon = getNodeIcon(node, isCollapsed, icons);
-                const nodeTypeClass = hasChildren ? 'folder' : 'leaf';
+                const collapsedClass = (hasChildren && isCollapsed) ? 'collapsed' : '';
                 const isSelected = (instance && instance.selectedNodeId === node.id);
-                const selectedClass = isSelected ? 'selected' : '';
+                const nodeTypeClass = hasChildren ? 'folder' : 'leaf';
 
-                html += `<li data-id="${node.id}">`;
-                html += `<div class="tree-node ${nodeTypeClass} ${selectedClass}" data-id="${node.id}">`;
-                html += `<span class="toggle-icon ${hasChildren ? '' : 'empty'}" data-id="${node.id}">${hasChildren ? (isCollapsed ? '▶' : '▼') : ''}</span>`;
-                html += `<span class="node-icon">${escapeHtml(icon)}</span>`;
+                html += `<li data-id="${node.id}" class="${collapsedClass}">`;
+                html += `<div class="tree-node ${nodeTypeClass} ${isSelected ? 'selected' : ''}" data-id="${node.id}">`;
+                html += `<span class="toggle-icon ${hasChildren ? '' : 'empty'}"></span>`;
+                html += `<span class="node-icon"></span>`;
                 html += `<span class="node-content">${escapeHtml(node.text)}</span>`;
                 html += `</div>`;
                 if (hasChildren) {
-                    html += `<div class="node-children" data-parent="${node.id}" style="${collapsedStyle}">${buildHtml(node.children)}</div>`;
+                    html += `<div class="node-children" style="${collapsedStyle}">${buildHtml(node.children)}</div>`;
                 }
                 html += `</li>`;
             }
@@ -308,503 +341,184 @@
             return html;
         }
 
+        // 空树处理
         if (isEmpty && options.allowDropToEmpty && options.treeType === 'right') {
-            $container.html(`
-                <div class="simple-tree-empty" data-empty-area="true">
-                    <div class="empty-placeholder">${escapeHtml(options.emptyText)}</div>
-                </div>
-            `);
-            bindEmptyTreeEvents($container, options);
+            $container.html(`<div class="simple-tree-empty"><div class="empty-placeholder">${escapeHtml(options.emptyText)}</div></div>`);
+            bindEmptyEvents($container, options);
         } else if (isEmpty) {
             $container.html('<div class="tree-node">无数据</div>');
         } else {
             $container.html(buildHtml(data));
-            if (preserveState && Object.keys(collapsedState).length > 0) {
+            if (preserveState && Object.keys(collapsedState).length) {
                 restoreCollapsedState($container, collapsedState);
             }
             bindEvents($container, options);
         }
 
+        // 更新实例中的折叠状态
         if (instance) {
             instance.collapsedState = collectCollapsedState($container);
         }
     }
 
-    // ========== 公共方法 ==========
-
-    function searchNodes($container, keyword) {
-        const instance = instances.get($container[0]);
-        if (!instance) return false;
-
-        const options = instance.options;
-        const treeData = $container.data('treeData');
-
-        if (!keyword || keyword.trim() === '') {
-            clearHighlights($container);
-            instance.currentSearchKeyword = '';
-            return false;
-        }
-
-        const lowerKeyword = keyword.toLowerCase();
-        let hasMatch = false;
-        const matchedIds = [];
-
-        function collectMatches(nodes, parentPath) {
-            if (!nodes) return;
-            for (let i = 0; i < nodes.length; i++) {
-                const node = nodes[i];
-                if (node.text && node.text.toLowerCase().includes(lowerKeyword)) {
-                    matchedIds.push(node.id);
-                    hasMatch = true;
-                    for (let j = 0; j < parentPath.length; j++) {
-                        const pathNode = parentPath[j];
-                        if (pathNode && pathNode.id) {
-                            matchedIds.push(pathNode.id);
-                        }
-                    }
-                }
-                if (node.children) {
-                    collectMatches(node.children, [...parentPath, node]);
-                }
-            }
-        }
-
-        collectMatches(treeData, []);
-
-        matchedIds.forEach(id => {
-            const $li = $container.find(`li[data-id="${id}"]`);
-            if ($li.length) {
-                const $children = $li.children('.node-children');
-                const $icon = $li.find('.toggle-icon');
-                if ($children.length && $children.is(':visible') === false) {
-                    $children.show();
-                    $icon.text('▼');
-                    if (instance.collapsedState) {
-                        instance.collapsedState[id] = false;
-                    }
-                }
-            }
-        });
-
-        clearHighlights($container);
-        $container.find('.tree-node').each(function () {
-            const $node = $(this);
-            const nodeId = $node.data('id');
-            const nodeInfo = findNode(treeData, nodeId);
-            if (nodeInfo && nodeInfo.node.text && nodeInfo.node.text.toLowerCase().includes(lowerKeyword)) {
-                $node.addClass('highlight');
-            }
-        });
-
-        instance.currentSearchKeyword = keyword;
-        return hasMatch;
-    }
-
-    function clearHighlights($container) {
-        $container.find('.tree-node').removeClass('highlight');
-    }
-
-    function clearSearch($container) {
-        const instance = instances.get($container[0]);
-        if (instance) {
-            instance.currentSearchKeyword = '';
-            clearHighlights($container);
-        }
-    }
-
-    function addNode($container, nodeName, targetNodeId = null) {
-        const instance = instances.get($container[0]);
-        if (!instance) return null;
-
-        const options = instance.options;
-        const treeData = $container.data('treeData');
-
-        if (!nodeName || nodeName.trim() === '') {
-            console.warn('节点名称不能为空');
-            return null;
-        }
-
-        if (options.duplicateCheck && isNodeNameExists(treeData, nodeName.trim())) {
-            alert('节点 "' + nodeName.trim() + '" 已存在');
-            return null;
-        }
-
-        const newNode = {
-            id: generateId(),
-            text: nodeName.trim(),
-            children: []
-        };
-
-        let success = false;
-
-        if (targetNodeId) {
-            success = insertNode(treeData, targetNodeId, newNode, 'inside');
-            if (success) {
-                const $parentLi = $container.find(`li[data-id="${targetNodeId}"]`);
-                if ($parentLi.length) {
-                    const $children = $parentLi.children('.node-children');
-                    const $icon = $parentLi.find('.toggle-icon');
-                    if ($children.length && $children.is(':visible') === false) {
-                        $children.show();
-                        $icon.text('▼');
-                        if (instance.collapsedState) {
-                            instance.collapsedState[targetNodeId] = false;
-                        }
-                    }
-                }
-            }
-        } else {
-            treeData.push(newNode);
-            success = true;
-        }
-
-        if (success) {
-            $container.data('treeData', treeData);
-            renderTree($container, treeData, options, true);
-
-            if (options.onAddNode) {
-                options.onAddNode(newNode, targetNodeId || null);
-            }
-            return newNode;
-        }
-
-        return null;
-    }
-
-    function deleteNode($container, nodeId) {
-        const instance = instances.get($container[0]);
-        if (!instance) return false;
-
-        const options = instance.options;
-        const treeData = $container.data('treeData');
-
-        const nodeInfo = findNode(treeData, nodeId);
-        if (!nodeInfo) return false;
-
-        if (confirm(`确定要删除节点 "${nodeInfo.node.text}" 吗？`)) {
-            removeNode(treeData, nodeId);
-            $container.data('treeData', treeData);
-
-            if (instance.selectedNodeId === nodeId) {
-                instance.selectedNodeId = null;
-            }
-
-            renderTree($container, treeData, options, true);
-
-            if (options.onDeleteNode) {
-                options.onDeleteNode(nodeInfo.node);
-            }
-            return true;
-        }
-
-        return false;
-    }
-
-    function deleteSelectedNode($container) {
-        const instance = instances.get($container[0]);
-        if (!instance || !instance.selectedNodeId) {
-            alert('请先点击选中要删除的节点');
-            return false;
-        }
-
-        return deleteNode($container, instance.selectedNodeId);
-    }
-
-    function getSelectedNode($container) {
-        const instance = instances.get($container[0]);
-        if (!instance || !instance.selectedNodeId) return null;
-
-        const treeData = $container.data('treeData');
-        const nodeInfo = findNode(treeData, instance.selectedNodeId);
-        return nodeInfo ? nodeInfo.node : null;
-    }
-
-    function setSelectedNode($container, nodeId) {
-        const instance = instances.get($container[0]);
-        if (!instance) return;
-
-        instance.selectedNodeId = nodeId;
-        renderTree($container, $container.data('treeData'), instance.options, true);
-    }
-
-    function getTreeData($container) {
-        return $container.data('treeData');
-    }
-
-    function setTreeData($container, newData, preserveState = true) {
-        const instance = instances.get($container[0]);
-        if (!instance) return;
-
-        $container.data('treeData', newData);
-        renderTree($container, newData, instance.options, preserveState);
-    }
-
-    function expandAll($container) {
-        $container.find('.node-children').each(function () {
-            const $children = $(this);
-            const $icon = $children.closest('li').find('.toggle-icon');
-            if ($children.length && $children.is(':visible') === false) {
-                $children.show();
-                $icon.text('▼');
-            }
-        });
-
-        const instance = instances.get($container[0]);
-        if (instance && instance.collapsedState) {
-            $container.find('li').each(function () {
-                const nodeId = $(this).find('.tree-node').data('id');
-                if (nodeId) instance.collapsedState[nodeId] = false;
-            });
-        }
-    }
-
-    function collapseAll($container) {
-        $container.find('.node-children').each(function () {
-            const $children = $(this);
-            const $icon = $children.closest('li').find('.toggle-icon');
-            if ($children.length && $children.is(':visible')) {
-                $children.hide();
-                $icon.text('▶');
-            }
-        });
-
-        const instance = instances.get($container[0]);
-        if (instance && instance.collapsedState) {
-            $container.find('li').each(function () {
-                const nodeId = $(this).find('.tree-node').data('id');
-                if (nodeId) instance.collapsedState[nodeId] = true;
-            });
-        }
-    }
-
-    function refreshTree($container) {
-        const instance = instances.get($container[0]);
-        if (!instance) return;
-
-        const treeData = $container.data('treeData');
-        renderTree($container, treeData, instance.options, true);
-    }
-
-    // ========== 拖拽放置提示 ==========
-
-    function updateCloneStatus(isValid) {
-        if (dragState.clone) {
-            if (isValid) {
-                dragState.clone.removeClass('invalid').addClass('valid');
-                const statusIcon = dragState.clone.find('.clone-status');
-                if (statusIcon.length) {
-                    statusIcon.text('✅');
-                } else {
-                    dragState.clone.prepend('<span class="clone-status">✅</span>');
-                }
-            } else {
-                dragState.clone.removeClass('valid').addClass('invalid');
-                const statusIcon = dragState.clone.find('.clone-status');
-                if (statusIcon.length) {
-                    statusIcon.text('❌');
-                } else {
-                    dragState.clone.prepend('<span class="clone-status">❌</span>');
-                }
-            }
-        }
-    }
-
-    // ========== 空树事件 ==========
-
-    function bindEmptyTreeEvents($container, options) {
-        const $emptyArea = $container.find('.simple-tree-empty');
-
-        $emptyArea.off('dragover dragleave drop');
-
-        $emptyArea.on('dragover', function (e) {
-            e.preventDefault();
-            if (dragState.sourceNode && dragState.sourceTreeType === 'left' && options.treeType === 'right') {
-                $(this).addClass('drag-over-empty');
-                updateCloneStatus(true);
-                dragState.isValidDrop = true;
-                dragState.targetPosition = 'root';
-                dragState.targetTree = $container;
-            }
-        });
-
-        $emptyArea.on('dragleave', function (e) {
-            $(this).removeClass('drag-over-empty');
-            updateCloneStatus(false);
-            dragState.isValidDrop = false;
-        });
-
-        $emptyArea.on('drop', function (e) {
-            e.preventDefault();
-            $(this).removeClass('drag-over-empty');
-            if (dragState.sourceNode && dragState.sourceTreeType === 'left' && options.treeType === 'right' && dragState.isValidDrop) {
-                performDropToEmpty(dragState.sourceTree, $container);
-            }
-        });
-
-        bindEmptyTreeDragEvents($container, options);
-    }
-
-    function bindEmptyTreeDragEvents($container, options) {
-        let emptyHighlightActive = false;
-
-        $(document).on('mousemove.simpleTreeEmpty', function (e) {
-            if (!dragState.isDragging) return;
-
-            const elemUnderCursor = document.elementsFromPoint(e.clientX, e.clientY);
-            let isEmptyArea = false;
-            for (let i = 0; i < elemUnderCursor.length; i++) {
-                if ($(elemUnderCursor[i]).hasClass('simple-tree-empty') ||
-                    $(elemUnderCursor[i]).closest('.simple-tree-empty').length) {
-                    isEmptyArea = true;
-                    break;
-                }
-            }
-
-            const $emptyDiv = $container.find('.simple-tree-empty');
-            if (isEmptyArea && !emptyHighlightActive && dragState.sourceTreeType === 'left' && options.treeType === 'right') {
-                $emptyDiv.addClass('drag-over-empty');
-                emptyHighlightActive = true;
-                updateCloneStatus(true);
-                dragState.isValidDrop = true;
-                dragState.targetPosition = 'root';
-                dragState.targetTree = $container;
-            } else if (!isEmptyArea && emptyHighlightActive) {
-                $emptyDiv.removeClass('drag-over-empty');
-                emptyHighlightActive = false;
-                updateCloneStatus(false);
-                dragState.isValidDrop = false;
-                dragState.targetPosition = null;
-            }
-        });
-
-        $(document).off('mouseup.simpleTreeEmpty');
-        $(document).on('mouseup.simpleTreeEmpty', function () {
-            $container.find('.simple-tree-empty').removeClass('drag-over-empty');
-        });
-    }
-
-    function performDropToEmpty(sourceTree, targetTree) {
-        if (!dragState.sourceNode) return false;
-
-        const sourceNode = dragState.sourceNode;
-        const sourceOptions = sourceTree.data('simpleTreeOptions');
-        const targetOptions = targetTree.data('simpleTreeOptions');
-
-        if (!sourceOptions || !targetOptions) return false;
-
-        if (sourceOptions.treeType === 'left' && targetOptions.treeType === 'right') {
-            let targetData = targetTree.data('treeData') || [];
-
-            if (sourceOptions.duplicateCheck && isNodeNameExists(targetData, sourceNode.text)) {
-                updateCloneStatus(false);
-                return false;
-            }
-
-            targetData = JSON.parse(JSON.stringify(targetData));
-
-            const cloned = cloneNode(sourceNode, sourceOptions.keepIdOnCopy);
-
-            targetData.push(cloned);
-
-            targetTree.data('treeData', targetData);
-            renderTree(targetTree, targetData, targetOptions, true);
-
-            if (sourceOptions.onCopy) {
-                sourceOptions.onCopy(sourceNode, cloned, null, 'root');
-            }
-            return true;
-        }
-
-        return false;
-    }
-
-    // ========== 事件绑定 ==========
-
+    // ========== 事件绑定（带阈值检测） ==========
+    
+    /**
+     * 绑定树事件（点击、双击、拖拽）
+     * 拖拽采用阈值检测：只有鼠标移动超过 dragThreshold 像素才真正开始拖拽
+     */
     function bindEvents($container, options) {
         const instance = instances.get($container[0]);
 
-        $container.off('click.simpleTree', '.toggle-icon');
-        $container.on('click.simpleTree', '.toggle-icon', function (e) {
+        // 点击箭头：切换折叠/展开
+        $container.off('click', '.toggle-icon').on('click', '.toggle-icon', function(e) {
             e.stopPropagation();
-            toggleNode($(this).closest('.tree-node'), options, $container);
+            const $li = $(this).closest('li');
+            const $children = $li.children('.node-children');
+            if (!$children.length) return;
+            
+            if ($children.is(':visible')) {
+                $children.hide();
+                $li.addClass('collapsed');
+                if (instance) instance.collapsedState[$li.data('id')] = true;
+            } else {
+                $children.show();
+                $li.removeClass('collapsed');
+                if (instance) instance.collapsedState[$li.data('id')] = false;
+            }
         });
 
-        $container.off('dblclick.simpleTree', '.tree-node.folder');
-        $container.on('dblclick.simpleTree', '.tree-node.folder', function (e) {
+        // 双击文件夹：切换折叠/展开
+        $container.off('dblclick', '.tree-node.folder').on('dblclick', '.tree-node.folder', function(e) {
             e.stopPropagation();
             e.preventDefault();
-            toggleNode($(this), options, $container);
+            
+            const $li = $(this).closest('li');
+            const $children = $li.children('.node-children');
+            
+            if ($children.length) {
+                if ($children.is(':visible')) {
+                    $children.hide();
+                    $li.addClass('collapsed');
+                    if (instance) instance.collapsedState[$li.data('id')] = true;
+                } else {
+                    $children.show();
+                    $li.removeClass('collapsed');
+                    if (instance) instance.collapsedState[$li.data('id')] = false;
+                }
+            }
         });
 
-        $container.off('click.simpleTree', '.tree-node');
-        $container.on('click.simpleTree', '.tree-node', function (e) {
+        // 单击节点：选中节点
+        $container.off('click', '.tree-node').on('click', '.tree-node', function(e) {
             e.stopPropagation();
             const $node = $(this);
             const nodeId = $node.data('id');
-
+            
             if (instance && instance.selectedNodeId) {
                 $container.find(`.tree-node[data-id="${instance.selectedNodeId}"]`).removeClass('selected');
             }
-
-            if (instance) {
-                instance.selectedNodeId = nodeId;
-            }
+            if (instance) instance.selectedNodeId = nodeId;
             $node.addClass('selected');
         });
 
-        $container.off('mousedown.simpleTree', '.tree-node');
-        $container.on('mousedown.simpleTree', '.tree-node', function (e) {
+        // 拖拽事件：带阈值检测（只有移动超过阈值才触发拖拽，避免误触发）
+        $container.off('mousedown', '.tree-node').on('mousedown', '.tree-node', function(e) {
+            // 只响应左键，且不处理箭头区域
             if (e.which !== 1) return;
             if ($(e.target).hasClass('toggle-icon')) return;
-            if ($(e.target).hasClass('node-icon')) return;
-
+            
             e.preventDefault();
-            startDrag(e, this, $container, options);
+            
+            const $node = $(this);
+            const startX = e.clientX;
+            const startY = e.clientY;
+            let dragStarted = false;
+            let isClick = true;
+            
+            /**
+             * 检查鼠标移动距离，超过阈值则开始拖拽
+             */
+            const checkMove = function(moveEvent) {
+                // 计算移动距离
+                const dx = Math.abs(moveEvent.clientX - startX);
+                const dy = Math.abs(moveEvent.clientY - startY);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // 超过阈值，开始拖拽
+                if (distance >= options.dragThreshold && !dragStarted) {
+                    dragStarted = true;
+                    isClick = false;
+                    // 移除临时监听器
+                    $(document).off('mousemove.check mouseup.check');
+                    // 开始真正的拖拽
+                    startDrag(moveEvent, $node[0], $container, options);
+                }
+            };
+            
+            /**
+             * 鼠标松开时清理
+             */
+            const cancelCheck = function() {
+                $(document).off('mousemove.check mouseup.check');
+                // 如果没有开始拖拽，说明是单击/双击，不需要额外处理
+                // 选中节点已经在 click 事件中处理了
+            };
+            
+            // 监听鼠标移动和松开
+            $(document).on('mousemove.check', checkMove);
+            $(document).on('mouseup.check', cancelCheck);
         });
     }
 
-    function toggleNode($node, options, $container) {
-        const $li = $node.closest('li');
-        const $children = $li.children('.node-children');
-        const $icon = $li.find('.toggle-icon');
-        const nodeId = $node.data('id');
-        const instance = instances.get($container[0]);
-
-        if ($children.length && $children.is(':visible')) {
-            $children.hide();
-            $icon.text('▶');
-            const $iconSpan = $node.find('.node-icon');
-            $iconSpan.text(options.icons.folder);
-            if (instance && instance.collapsedState) {
-                instance.collapsedState[nodeId] = true;
+    /**
+     * 绑定空树区域的拖拽事件
+     */
+    function bindEmptyEvents($container, options) {
+        const $area = $container.find('.simple-tree-empty');
+        $area.off('dragover dragleave drop');
+        
+        $area.on('dragover', function(e) {
+            e.preventDefault();
+            if (dragState.sourceNode && dragState.sourceTreeType === 'left' && options.treeType === 'right') {
+                $(this).addClass('drag-over-empty');
+                dragState.isValidDrop = true;
+                dragState.targetPosition = 'root';
+                dragState.targetTree = $container;
+                updateCloneStatus(true);
             }
-        } else if ($children.length) {
-            $children.show();
-            $icon.text('▼');
-            const $iconSpan = $node.find('.node-icon');
-            $iconSpan.text(options.icons.folderOpen || options.icons.folder);
-            if (instance && instance.collapsedState) {
-                instance.collapsedState[nodeId] = false;
+        });
+        
+        $area.on('dragleave', function() {
+            $(this).removeClass('drag-over-empty');
+            dragState.isValidDrop = false;
+            updateCloneStatus(false);
+        });
+        
+        $area.on('drop', function(e) {
+            e.preventDefault();
+            $(this).removeClass('drag-over-empty');
+            if (dragState.isValidDrop) {
+                performDropToEmpty(options);
             }
-        }
+        });
     }
 
-    // ========== 拖拽逻辑 ==========
-
+    // ========== 拖拽核心逻辑 ==========
+    
+    /**
+     * 开始拖拽（距离阈值已满足）
+     */
     function startDrag(e, nodeEl, $container, options) {
         if (dragState.isDragging) cleanupDrag();
-
+        
         const $node = $(nodeEl);
         const nodeId = $node.data('id');
-
-        if (!nodeId) return;
-
         const treeData = $container.data('treeData');
-        if (!treeData) return;
-
         const nodeInfo = findNode(treeData, nodeId);
         if (!nodeInfo) return;
 
+        // 保存拖拽源信息
         dragState.sourceNode = nodeInfo.node;
         dragState.sourceTree = $container;
         dragState.sourceTreeType = options.treeType;
@@ -812,13 +526,11 @@
         dragState.isDragging = true;
         dragState.isValidDrop = false;
 
+        // 添加拖拽样式
         $node.addClass('dragging');
 
-        const hasChildren = nodeInfo.node.children && nodeInfo.node.children.length > 0;
-        const icon = hasChildren ? options.icons.folder : options.icons.file;
-
-        dragState.clone = $('<div class="simple-tree-clone invalid">')
-            .html(`<span class="clone-status">❌</span><span>${escapeHtml(icon)}</span><span>${escapeHtml(nodeInfo.node.text)}</span>`)
+        // 创建克隆元素（样式完全由CSS控制）
+        dragState.clone = $(`<div class="simple-tree-clone invalid">${escapeHtml(nodeInfo.node.text)}</div>`)
             .css({ top: e.clientY + 10, left: e.clientX + 10 })
             .appendTo('body');
 
@@ -826,97 +538,83 @@
             options.onDragStart(nodeInfo.node, options.treeType);
         }
 
+        // 绑定全局事件
         $(document).off('mousemove.simpleTree mouseup.simpleTree');
-        $(document).on('mousemove.simpleTree', function (me) {
-            onDragMove(me);
-        });
-        $(document).on('mouseup.simpleTree', function (me) {
-            onDragEnd(me);
-        });
+        $(document).on('mousemove.simpleTree', e => onDragMove(e, options));
+        $(document).on('mouseup.simpleTree', e => onDragEnd(e, options));
     }
 
-    function onDragMove(e) {
+    /**
+     * 拖拽移动中
+     */
+    function onDragMove(e, options) {
         if (!dragState.isDragging) return;
         e.preventDefault();
 
+        // 更新克隆体位置
         if (dragState.clone) {
             dragState.clone.css({ top: e.clientY + 10, left: e.clientX + 10 });
         }
 
+        // 查找鼠标下方的元素
         const elemUnderCursor = document.elementsFromPoint(e.clientX, e.clientY);
         let targetNodeEl = null;
+        let isEmptyArea = false;
+
         for (let i = 0; i < elemUnderCursor.length; i++) {
             const el = elemUnderCursor[i];
             if ($(el).hasClass('tree-node') && el !== dragState.sourceNode) {
                 targetNodeEl = el;
                 break;
             }
-        }
-
-        let isEmptyArea = false;
-        if (!targetNodeEl) {
-            for (let i = 0; i < elemUnderCursor.length; i++) {
-                if ($(elemUnderCursor[i]).hasClass('simple-tree-empty')) {
-                    isEmptyArea = true;
-                    break;
-                }
+            if ($(el).hasClass('simple-tree-empty')) {
+                isEmptyArea = true;
             }
         }
 
+        // 清除旧的高亮
         if (dragState.targetNode) {
             $(dragState.targetNode).removeClass('drag-over-before drag-over-after drag-over-inside');
             dragState.targetNode = null;
         }
 
+        // 处理空树区域拖拽
         if (isEmptyArea && dragState.sourceTreeType === 'left') {
-            const $emptyDiv = $('.simple-tree-empty');
-            const $targetTree = $emptyDiv.closest('.simple-tree');
-            const targetOptions = $targetTree.data('simpleTreeOptions');
-            if (targetOptions && targetOptions.treeType === 'right') {
-                $emptyDiv.addClass('drag-over-empty');
+            const $targetTree = $('.simple-tree-empty').closest('.simple-tree');
+            const targetOpt = $targetTree.data('simpleTreeOptions');
+            if (targetOpt?.treeType === 'right') {
                 dragState.targetTree = $targetTree;
                 dragState.targetPosition = 'root';
                 dragState.isValidDrop = true;
                 updateCloneStatus(true);
                 return;
             }
-        } else {
-            $('.simple-tree-empty').removeClass('drag-over-empty');
         }
 
+        // 处理普通节点拖拽
         if (targetNodeEl) {
             const $targetTree = $(targetNodeEl).closest('.simple-tree');
-            const targetOptions = $targetTree.data('simpleTreeOptions');
-            const sourceType = dragState.sourceTreeType;
-            const targetType = targetOptions ? targetOptions.treeType : null;
+            const targetOpt = $targetTree.data('simpleTreeOptions');
+            const targetTreeData = $targetTree.data('treeData') || [];
+            const targetNodeId = $(targetNodeEl).data('id');
+            
+            const isValid = isValidDropTarget(
+                dragState.sourceNode,
+                dragState.sourceTreeType,
+                targetOpt?.treeType,
+                targetNodeId,
+                targetTreeData
+            );
 
-            if (sourceType && targetType) {
-                const targetTreeData = $targetTree.data('treeData') || [];
-                const targetNodeId = $(targetNodeEl).data('id');
-                const isValidDrop = isValidDropTarget(
-                    dragState.sourceNode, sourceType, targetType, targetNodeId, targetTreeData
-                );
+            dragState.targetTree = $targetTree;
+            dragState.isValidDrop = isValid;
+            updateCloneStatus(isValid);
 
-                dragState.targetTree = $targetTree;
-                dragState.isValidDrop = isValidDrop;
-                updateCloneStatus(isValidDrop);
-
-                if (isValidDrop) {
-                    const position = getDropPosition(e, targetNodeEl);
-                    dragState.targetNode = targetNodeEl;
-                    dragState.targetPosition = position;
-
-                    if (position === 'before') {
-                        $(targetNodeEl).addClass('drag-over-before');
-                    } else if (position === 'after') {
-                        $(targetNodeEl).addClass('drag-over-after');
-                    } else {
-                        $(targetNodeEl).addClass('drag-over-inside');
-                    }
-                }
-            } else {
-                dragState.isValidDrop = false;
-                updateCloneStatus(false);
+            if (isValid) {
+                const position = getDropPosition(e, targetNodeEl);
+                dragState.targetNode = targetNodeEl;
+                dragState.targetPosition = position;
+                $(targetNodeEl).addClass(`drag-over-${position === 'inside' ? 'inside' : position}`);
             }
         } else {
             dragState.isValidDrop = false;
@@ -924,93 +622,115 @@
         }
     }
 
-    function onDragEnd(e) {
+    /**
+     * 拖拽结束
+     */
+    function onDragEnd(e, options) {
         if (!dragState.isDragging) {
             cleanupDrag();
             return;
         }
 
         let success = false;
-
         if (dragState.isValidDrop) {
-            if (dragState.targetPosition === 'root' && dragState.sourceTreeType === 'left') {
-                success = performDropToEmpty(dragState.sourceTree, dragState.targetTree);
-            } else if (dragState.targetNode && dragState.targetPosition) {
-                const targetId = $(dragState.targetNode).data('id');
-                success = performDrop(targetId, dragState.targetPosition);
+            if (dragState.targetPosition === 'root') {
+                success = performDropToEmpty(options);
+            } else if (dragState.targetNode) {
+                success = performDrop($(dragState.targetNode).data('id'), dragState.targetPosition);
             }
         }
 
-        const sourceOptions = dragState.sourceTree ? dragState.sourceTree.data('simpleTreeOptions') : null;
-        if (sourceOptions && sourceOptions.onDragEnd) {
-            sourceOptions.onDragEnd(dragState.sourceNode, success);
+        if (options.onDragEnd) {
+            options.onDragEnd(dragState.sourceNode, success);
         }
 
         cleanupDrag();
         $('.simple-tree-empty').removeClass('drag-over-empty');
     }
 
+    /**
+     * 执行放置（普通节点）
+     */
     function performDrop(targetId, position) {
         const sourceNode = dragState.sourceNode;
         const sourceTree = dragState.sourceTree;
-        const sourceId = dragState.sourceId;
+        const sourceOpt = sourceTree.data('simpleTreeOptions');
         const targetTree = dragState.targetTree;
+        const targetOpt = targetTree.data('simpleTreeOptions');
 
-        if (!sourceTree || !targetTree) return false;
+        if (!sourceOpt || !targetOpt) return false;
 
-        const sourceOptions = sourceTree.data('simpleTreeOptions');
-        const targetOptions = targetTree.data('simpleTreeOptions');
-
-        if (!sourceOptions || !targetOptions) return false;
-
-        const sourceType = sourceOptions.treeType;
-        const targetType = targetOptions.treeType;
-
-        let success = false;
-
-        if (sourceType === 'left' && targetType === 'right') {
+        // 左树 → 右树：复制
+        if (sourceOpt.treeType === 'left' && targetOpt.treeType === 'right') {
             let targetData = targetTree.data('treeData') || [];
-
-            if (sourceOptions.duplicateCheck && isNodeNameExists(targetData, sourceNode.text)) {
+            if (sourceOpt.duplicateCheck && isNodeNameExists(targetData, sourceNode.text)) {
                 updateCloneStatus(false);
                 return false;
             }
-
             targetData = JSON.parse(JSON.stringify(targetData));
-            targetTree.data('treeData', targetData);
-
-            const cloned = cloneNode(sourceNode, sourceOptions.keepIdOnCopy);
-
+            const cloned = cloneNode(sourceNode, sourceOpt.keepIdOnCopy);
             if (insertNode(targetData, targetId, cloned, position)) {
                 targetTree.data('treeData', targetData);
-                renderTree(targetTree, targetData, targetOptions, true);
-                if (sourceOptions.onCopy) {
-                    sourceOptions.onCopy(sourceNode, cloned, targetId, position);
-                }
-                success = true;
+                renderTree(targetTree, targetData, targetOpt, true);
+                if (sourceOpt.onCopy) sourceOpt.onCopy(sourceNode, cloned, targetId, position);
+                return true;
             }
         }
-        else if (sourceType === 'right' && targetType === 'right') {
+        // 右树 → 右树：移动
+        else if (sourceOpt.treeType === 'right' && targetOpt.treeType === 'right') {
             let targetData = targetTree.data('treeData') || [];
             targetData = JSON.parse(JSON.stringify(targetData));
-            targetTree.data('treeData', targetData);
-
-            if (sourceId == targetId) return false;
-
-            removeNode(targetData, sourceId);
+            if (sourceNode.id == targetId) return false;
+            removeNode(targetData, sourceNode.id);
             if (insertNode(targetData, targetId, sourceNode, position)) {
                 targetTree.data('treeData', targetData);
-                renderTree(targetTree, targetData, targetOptions, true);
-                if (sourceOptions.onMove) {
-                    sourceOptions.onMove(sourceNode, targetId, position);
-                }
-                success = true;
+                renderTree(targetTree, targetData, targetOpt, true);
+                if (sourceOpt.onMove) sourceOpt.onMove(sourceNode, targetId, position);
+                return true;
             }
         }
-
-        return success;
+        return false;
     }
 
+    /**
+     * 执行放置（空树区域）
+     */
+    function performDropToEmpty(options) {
+        const sourceNode = dragState.sourceNode;
+        const sourceTree = dragState.sourceTree;
+        const sourceOpt = sourceTree.data('simpleTreeOptions');
+        const targetTree = dragState.targetTree;
+        const targetOpt = targetTree.data('simpleTreeOptions');
+
+        if (!sourceOpt || !targetOpt) return false;
+        if (sourceOpt.treeType !== 'left' || targetOpt.treeType !== 'right') return false;
+
+        let targetData = targetTree.data('treeData') || [];
+        if (sourceOpt.duplicateCheck && isNodeNameExists(targetData, sourceNode.text)) return false;
+
+        targetData = JSON.parse(JSON.stringify(targetData));
+        const cloned = cloneNode(sourceNode, sourceOpt.keepIdOnCopy);
+        targetData.push(cloned);
+        targetTree.data('treeData', targetData);
+        renderTree(targetTree, targetData, targetOpt, true);
+
+        if (sourceOpt.onCopy) sourceOpt.onCopy(sourceNode, cloned, null, 'root');
+        return true;
+    }
+
+    /**
+     * 更新克隆体的状态样式（只添加/移除CSS类）
+     * ✅/❌ 图标通过 CSS 的 ::before 伪元素显示
+     */
+    function updateCloneStatus(isValid) {
+        if (dragState.clone) {
+            dragState.clone.removeClass('valid invalid').addClass(isValid ? 'valid' : 'invalid');
+        }
+    }
+
+    /**
+     * 清理拖拽状态
+     */
     function cleanupDrag() {
         if (dragState.sourceNode) {
             $('.tree-node.dragging').removeClass('dragging');
@@ -1021,7 +741,7 @@
         if (dragState.clone) {
             dragState.clone.remove();
         }
-
+        
         dragState = {
             sourceNode: null,
             sourceTree: null,
@@ -1034,103 +754,285 @@
             isDragging: false,
             isValidDrop: false
         };
-
+        
         $(document).off('mousemove.simpleTree mouseup.simpleTree');
-        $(document).off('mousemove.simpleTreeEmpty mouseup.simpleTreeEmpty');
     }
 
-    // ========== 插件入口 ==========
+    // ========== 公共API方法 ==========
+    
+    /**
+     * 搜索节点并高亮
+     */
+    function searchNodes($container, keyword) {
+        const instance = instances.get($container[0]);
+        if (!instance) return false;
+        
+        const treeData = $container.data('treeData');
+        if (!keyword?.trim()) {
+            clearHighlights($container);
+            instance.currentKeyword = '';
+            return false;
+        }
 
-    $.fn.simpleTree = function (userOptions) {
+        const lowerKw = keyword.toLowerCase();
+        const matchedIds = [];
+
+        function collectMatches(nodes, path) {
+            if (!nodes) return;
+            for (const node of nodes) {
+                if (node.text?.toLowerCase().includes(lowerKw)) {
+                    matchedIds.push(node.id);
+                    path.forEach(p => matchedIds.push(p.id));
+                }
+                if (node.children) collectMatches(node.children, [...path, node]);
+            }
+        }
+        collectMatches(treeData, []);
+
+        // 展开匹配节点的父级
+        matchedIds.forEach(id => {
+            const $li = $container.find(`li[data-id="${id}"]`);
+            const $children = $li.children('.node-children');
+            if ($children.length && !$children.is(':visible')) {
+                $children.show();
+                $li.removeClass('collapsed');
+                if (instance.collapsedState) instance.collapsedState[id] = false;
+            }
+        });
+
+        // 高亮匹配的节点
+        clearHighlights($container);
+        $container.find('.tree-node').each(function() {
+            const nodeInfo = findNode(treeData, $(this).data('id'));
+            if (nodeInfo?.node.text?.toLowerCase().includes(lowerKw)) {
+                $(this).addClass('highlight');
+            }
+        });
+
+        instance.currentKeyword = keyword;
+        return true;
+    }
+
+    function clearHighlights($container) {
+        $container.find('.tree-node').removeClass('highlight');
+    }
+
+    function clearSearch($container) {
+        const inst = instances.get($container[0]);
+        if (inst) {
+            inst.currentKeyword = '';
+            clearHighlights($container);
+        }
+    }
+
+    /**
+     * 添加节点
+     * @param {string|object} nodeData 节点名称 或 { id, text, pId, ... }
+     * @param {string} targetParentId 目标父节点ID（可选）
+     */
+    function addNode($container, nodeData, targetParentId = null) {
+        const instance = instances.get($container[0]);
+        if (!instance) return null;
+        
+        const opt = instance.options;
+        const treeData = $container.data('treeData');
+        let newNode;
+        let parentId = targetParentId;
+
+        if (typeof nodeData === 'string') {
+            const name = nodeData.trim();
+            if (!name) return null;
+            if (opt.duplicateCheck && isNodeNameExists(treeData, name)) {
+                alert(`节点 "${name}" 已存在`);
+                return null;
+            }
+            newNode = { id: generateId(), text: name, children: [] };
+        } else if (typeof nodeData === 'object') {
+            const name = nodeData.text || nodeData.name;
+            if (!name) return null;
+            let id = nodeData.id || generateId();
+            if (isNodeIdExists(treeData, id)) {
+                console.warn(`ID "${id}" 已存在`);
+                return null;
+            }
+            const pId = nodeData.pId !== undefined ? nodeData.pId : parentId;
+            if (opt.duplicateCheck && isNodeNameExists(treeData, name, id)) {
+                alert(`节点 "${name}" 已存在`);
+                return null;
+            }
+            newNode = { id, text: name, children: nodeData.children || [] };
+            if (nodeData.type) newNode.type = nodeData.type;
+            parentId = pId;
+        } else {
+            return null;
+        }
+
+        const success = addNodeByParentId(treeData, newNode, parentId);
+        if (success) {
+            $container.data('treeData', treeData);
+            renderTree($container, treeData, opt, true);
+            if (opt.onAddNode) opt.onAddNode(newNode, parentId || null);
+            return newNode;
+        }
+        return null;
+    }
+
+    /**
+     * 删除节点
+     */
+    function deleteNode($container, nodeId) {
+        const instance = instances.get($container[0]);
+        if (!instance) return false;
+        
+        const opt = instance.options;
+        const treeData = $container.data('treeData');
+        const nodeInfo = findNode(treeData, nodeId);
+        
+        if (!nodeInfo || !confirm(`确定删除 "${nodeInfo.node.text}"？`)) return false;
+        
+        removeNode(treeData, nodeId);
+        $container.data('treeData', treeData);
+        if (instance.selectedNodeId === nodeId) instance.selectedNodeId = null;
+        renderTree($container, treeData, opt, true);
+        if (opt.onDeleteNode) opt.onDeleteNode(nodeInfo.node);
+        return true;
+    }
+
+    function deleteSelectedNode($container) {
+        const instance = instances.get($container[0]);
+        if (!instance?.selectedNodeId) {
+            alert('请先选中节点');
+            return false;
+        }
+        return deleteNode($container, instance.selectedNodeId);
+    }
+
+    function getSelectedNode($container) {
+        const instance = instances.get($container[0]);
+        if (!instance?.selectedNodeId) return null;
+        return findNode($container.data('treeData'), instance.selectedNodeId)?.node || null;
+    }
+
+    function setSelectedNode($container, nodeId) {
+        const instance = instances.get($container[0]);
+        if (!instance) return;
+        instance.selectedNodeId = nodeId;
+        renderTree($container, $container.data('treeData'), instance.options, true);
+    }
+
+    function getTreeData($container) {
+        return $container.data('treeData');
+    }
+
+    function setTreeData($container, newData, preserveState = true) {
+        const instance = instances.get($container[0]);
+        if (!instance) return;
+        $container.data('treeData', newData);
+        renderTree($container, newData, instance.options, preserveState);
+    }
+
+    function expandAllNodes($container) {
+        $container.find('.node-children').each(function() {
+            const $this = $(this);
+            if ($this.length && !$this.is(':visible')) {
+                $this.show();
+                $this.closest('li').removeClass('collapsed');
+            }
+        });
+        const instance = instances.get($container[0]);
+        if (instance?.collapsedState) {
+            $container.find('li').each(function() {
+                const id = $(this).data('id');
+                if (id) instance.collapsedState[id] = false;
+            });
+        }
+    }
+
+    function collapseAllNodes($container) {
+        $container.find('.node-children').each(function() {
+            const $this = $(this);
+            if ($this.length && $this.is(':visible')) {
+                $this.hide();
+                $this.closest('li').addClass('collapsed');
+            }
+        });
+        const instance = instances.get($container[0]);
+        if (instance?.collapsedState) {
+            $container.find('li').each(function() {
+                const id = $(this).data('id');
+                if (id) instance.collapsedState[id] = true;
+            });
+        }
+    }
+
+    function refreshTree($container) {
+        const instance = instances.get($container[0]);
+        if (instance) {
+            renderTree($container, $container.data('treeData'), instance.options, true);
+        }
+    }
+
+    // ========== 插件注册 ==========
+    
+    $.fn.simpleTree = function(userOptions) {
+        // 方法调用模式
         if (typeof userOptions === 'string') {
             const method = userOptions;
             const args = Array.prototype.slice.call(arguments, 1);
-
             const results = [];
-            this.each(function () {
+            
+            this.each(function() {
                 const $this = $(this);
                 switch (method) {
-                    case 'search':
-                        results.push(searchNodes($this, args[0]));
-                        break;
-                    case 'clearSearch':
-                        results.push(clearSearch($this));
-                        break;
-                    case 'addNode':
-                        results.push(addNode($this, args[0], args[1]));
-                        break;
-                    case 'deleteNode':
-                        results.push(deleteNode($this, args[0]));
-                        break;
-                    case 'deleteSelected':
-                        results.push(deleteSelectedNode($this));
-                        break;
-                    case 'getSelected':
-                        results.push(getSelectedNode($this));
-                        break;
-                    case 'setSelected':
-                        results.push(setSelectedNode($this, args[0]));
-                        break;
-                    case 'getData':
-                        results.push(getTreeData($this));
-                        break;
-                    case 'setData':
-                        results.push(setTreeData($this, args[0], args[1]));
-                        break;
-                    case 'expandAll':
-                        results.push(expandAll($this));
-                        break;
-                    case 'collapseAll':
-                        results.push(collapseAll($this));
-                        break;
-                    case 'refresh':
-                        results.push(refreshTree($this));
-                        break;
-                    case 'toJson':
-                        const pretty = args[0] === true;
-                        results.push(treeToJson($this, pretty));
-                        break;
-                    default:
-                        console.warn('未知方法: ' + method);
+                    case 'search': results.push(searchNodes($this, args[0])); break;
+                    case 'clearSearch': results.push(clearSearch($this)); break;
+                    case 'addNode': results.push(addNode($this, args[0], args[1])); break;
+                    case 'deleteNode': results.push(deleteNode($this, args[0])); break;
+                    case 'deleteSelected': results.push(deleteSelectedNode($this)); break;
+                    case 'getSelected': results.push(getSelectedNode($this)); break;
+                    case 'setSelected': results.push(setSelectedNode($this, args[0])); break;
+                    case 'getData': results.push(getTreeData($this)); break;
+                    case 'setData': results.push(setTreeData($this, args[0], args[1])); break;
+                    case 'expandAll': results.push(expandAllNodes($this)); break;
+                    case 'collapseAll': results.push(collapseAllNodes($this)); break;
+                    case 'refresh': results.push(refreshTree($this)); break;
+                    case 'toJson': results.push(treeToJson($this, args[0] === true)); break;
+                    default: console.warn('未知方法:', method);
                 }
             });
-
             return results.length === 1 ? results[0] : results;
         }
 
+        // 初始化模式
         const options = $.extend(true, {}, defaults, userOptions);
-
-        return this.each(function () {
+        
+        return this.each(function() {
             const $this = $(this);
-            $this.addClass('simple-tree');
+            $this.addClass('simple-tree').data('simpleTreeOptions', options);
 
-            $this.data('simpleTreeOptions', options);
-
+            // 确保每个节点都有ID
             function ensureId(nodes) {
-                if (!nodes) return;
-                for (let i = 0; i < nodes.length; i++) {
-                    if (!nodes[i].id) {
-                        nodes[i].id = generateId();
-                    }
-                    if (nodes[i].children) {
-                        ensureId(nodes[i].children);
-                    }
-                }
+                nodes?.forEach(n => {
+                    if (!n.id) n.id = generateId();
+                    if (n.children) ensureId(n.children);
+                });
             }
 
+            // 存储实例状态
             instances.set($this[0], {
                 options: options,
                 selectedNodeId: null,
-                currentSearchKeyword: '',
+                currentKeyword: '',
                 collapsedState: {}
             });
 
-            let dataToRender = options.data;
-            if (dataToRender && dataToRender.length) {
-                const dataCopy = JSON.parse(JSON.stringify(dataToRender));
-                ensureId(dataCopy);
-                $this.data('treeData', dataCopy);
-                renderTree($this, dataCopy, options, false);
+            // 初始化数据
+            let data = options.data;
+            if (data?.length) {
+                const copy = JSON.parse(JSON.stringify(data));
+                ensureId(copy);
+                $this.data('treeData', copy);
+                renderTree($this, copy, options, false);
             } else if (options.allowDropToEmpty && options.treeType === 'right') {
                 $this.data('treeData', []);
                 renderTree($this, [], options, false);
@@ -1140,5 +1042,4 @@
             }
         });
     };
-
 })(jQuery);

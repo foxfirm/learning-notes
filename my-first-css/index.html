@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的 CSS 练习</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- 引入 Lodash CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+
+    <!-- 引入 jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+    <script src="script.js"></script>
+</head>
+
+<body>
+
+    <!-- <div class="card">
+        <h1>Hello, CSS!</h1>
+        <p>这是我用 VS Code 写的第一个样式卡片，牛啊牛啊</p>
+        <button id="myButton" onclick="clickHandler()">点击我</button>
+    </div> -->
+
+    <main style="position: relative;" id="main">
+        <article>
+            <div id="example" style="position: absolute; left: 180px; top: 180px">
+                <button id="myButton" onclick="clickHandler()">点击我</button>
+            </div>
+        </article>
+    </main>
+
+    <style>
+        #example {
+            width: 300px;
+            height: 200px;
+            border: 25px solid #E8C48F;
+            padding: 20px;
+            overflow: auto;
+        }
+    </style>
+
+</body>
+
+</html>
