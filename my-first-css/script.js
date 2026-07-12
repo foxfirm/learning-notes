@@ -1,16 +1,67 @@
+document.addEventListener('DOMContentLoaded', function () {
+  let slider = document.querySelector('.slider');
+  let thumb = document.querySelector('.thumb');
+  // 初始化
 
-$(document).ready(function () {
-    //console.log('query is ready');
+  let percent = ((thumb.getBoundingClientRect().left - slider.getBoundingClientRect().left) / (slider.offsetWidth - thumb.offsetWidth)) * 100;
+  slider.style.background = `linear-gradient(to right, #2be805 0%, #2be805 ${percent}%, #ddd ${percent}%, #ddd 100%)`;
+
+
+  slider.onpointerdown = function (event) {
+    console.log('pointer down event:', event);
+    alert('pointer down event:' + event);
+    event.preventDefault();
+    let newLeft = event.clientX - thumb.offsetWidth / 2 - slider.getBoundingClientRect().left;
+    if (newLeft < 0) {
+      newLeft = 0;
+    }
+    let rightEdge = slider.offsetWidth - thumb.offsetWidth;
+    if (newLeft > rightEdge) {
+      newLeft = rightEdge;
+    }
+    thumb.style.left = newLeft + 'px';
+
+    let percent = (newLeft / rightEdge) * 100;
+    slider.style.background = `linear-gradient(to right, #2be805 0%, #2be805 ${percent}%, #ddd ${percent}%, #ddd 100%)`;
+  };
+
+  thumb.ondragstart = function (event) {
+    return false;
+  };
+  thumb.onpointerdown = function (event) {
+    event.preventDefault();
+    let shiftX = event.clientX - thumb.getBoundingClientRect().left;
+
+    document.addEventListener('pointermove', onMouseMove);
+    document.addEventListener('pointerup', onMouseUp);
+
+    function onMouseMove(event) {
+      let newLeft = event.clientX - shiftX - slider.getBoundingClientRect().left;
+      let rightEdge = slider.offsetWidth - thumb.offsetWidth;
+      if (newLeft < 0) {
+        newLeft = 0;
+      }
+      if (newLeft > rightEdge) {
+        newLeft = rightEdge;
+      }
+
+      thumb.style.left = newLeft + 'px';
+
+      let percent = (newLeft / rightEdge) * 100;
+      slider.style.background = `linear-gradient(to right, #2be805 0%, #2be805 ${percent}%, #ddd ${percent}%, #ddd 100%)`;
+    }
+
+    function onMouseUp(event) {
+      document.removeEventListener('pointermove', onMouseMove);
+      document.removeEventListener('pointerup', onMouseUp);
+    }
+  };
 });
 
-function clickHandler() {
-    let h = document.documentElement.clientHeight;
-    let w = document.documentElement.clientWidth;
-    console.log(`当前窗口的宽度为 ${w}px，高度为 ${h}px`);
-    let docu = document.documentElement;
-    console.log(`window.pageYOffset: ${window.pageYOffset}`); // 当前页面在垂直方向上滚动的距离
-    console.log(`window.pageXOffset: ${window.pageXOffset}`); // 当前页面在水平方向上滚动的距离
-}
 
-window.clickHandler = clickHandler; // 将函数暴露到全局作用域，以便在 HTML 中调用
+$(function () {
+  console.log('jquery 3.6.0 loaded');
+  console.log('$(this): ', $(this)['0'] === $(this)[0]); 
+  console.log('this: ', this); 
 
+});
