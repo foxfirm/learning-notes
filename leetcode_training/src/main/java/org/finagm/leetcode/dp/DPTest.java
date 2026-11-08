@@ -218,48 +218,81 @@ public class DPTest {
 
     @Test
     public void test() {
-        Assert.assertEquals(13, findRotateSteps("godding", "godding"));
+        Assert.assertEquals(19, superEggDrop1(13,8192));
     }
 
 
-    public int findRotateSteps(String ring, String key) {
-        int m = ring.length();
-        int n = key.length();
-        Map<Character, List<Integer>> indexesMap = new HashMap<>();
-        for (int i = 0; i < m; i++) {
-            char c = ring.charAt(i);
-            indexesMap.computeIfAbsent(c, k -> new ArrayList<>()).add(i);
+    public int superEggDrop(int k, int n) {
+        int[][] dp = new int[k + 1][n + 1];
+        for (int i = 1; i <= k; i++) {
+            dp[i][1] = 1;
         }
-
-        //  预计算距离
-        int[][] distance = new int[m][m];
-        for (int i = 0; i < m; i++) {
-            for (int j = 0; j < m; j++) {
-                int delta = Math.abs(i - j);
-                delta = Math.min(delta, m - delta);
-                distance[i][j] = delta;
-            }
+        for (int j = 1; j <= n; j++) {
+            dp[1][j] = j;
         }
-
-        int[][] dp = new int[m][n];
-        for (int i = 0; i < m; i++) {
-            int minSteps = Integer.MAX_VALUE;
-            for (int index : indexesMap.get(key.charAt(n - 1))) {
-                minSteps = Math.min(minSteps, distance[i][index] + 1);
-            }
-            dp[i][n - 1] = minSteps;
-        }
-        for (int j = n - 2; j >= 0; j--) {
-            for (int i = m - 1; i >= 0; i--) {
-                int minSteps = Integer.MAX_VALUE;
-                for (int index : indexesMap.get(key.charAt(j))) {
-                    minSteps = Math.min(minSteps, distance[i][index] + 1 + dp[index][j + 1]);
+        for (int i = 2; i <= k; i++) {
+            for (int j = 2; j <= n; j++) {
+                int left = 1;
+                int right = j;
+                while (left < right) {
+                    int mid = left + (right - left) / 2;
+                    int broken = dp[i - 1][mid - 1];
+                    int notBroken = dp[i][j - mid];
+                    if (broken > notBroken) {
+                        right = mid;
+                    } else {
+                        left = mid + 1;
+                    }
                 }
-                dp[i][j] = minSteps;
+                int moves = 1 + Math.max(dp[i - 1][left - 1], dp[i][j - left]);
+                dp[i][j] = moves;
             }
         }
-        return dp[0][0];
+        return dp[k][n];
     }
 
+    public int superEggDrop1(int K, int N) {
+        // dp[i][j] 表示 i 个鸡蛋，j 层楼，最坏情况下所需的最少移动次数
+        int[][] dp = new int[K + 1][N + 1];
+
+        // 初始化
+        for (int i = 1; i <= K; i++) {
+            dp[i][0] = 0;
+            dp[i][1] = 1;
+        }
+        for (int j = 1; j <= N; j++) {
+            dp[1][j] = j;
+        }
+
+        // 填充 DP 表，使用二分搜索优化
+        for (int i = 2; i <= K; i++) {
+            for (int j = 2; j <= N; j++) {
+                int left = 1;
+                int right = j;
+
+                while (left < right) {
+                    int mid = left + (right - left) / 2;
+                    // 鸡蛋碎了：需要检查更低的楼层
+                    int broken = dp[i - 1][mid - 1];
+                    // 鸡蛋没碎：需要检查更高的楼层
+                    int notBroken = dp[i][j - mid];
+
+                    if (broken > notBroken) {
+                        // 如果碎的情况更糟，应该尝试更低的楼层
+                        right = mid;
+                    } else {
+                        // 如果没碎的情况更糟，应该尝试更高的楼层
+                        left = mid + 1;
+                    }
+                }
+
+                // left 是最优的扔鸡蛋楼层
+                int moves = Math.max(dp[i - 1][left - 1], dp[i][j - left]) + 1;
+                dp[i][j] = moves;
+            }
+        }
+
+        return dp[K][N];
+    }
 
 }
