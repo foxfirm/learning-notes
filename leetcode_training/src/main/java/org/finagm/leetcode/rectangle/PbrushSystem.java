@@ -45,7 +45,7 @@ public class PbrushSystem {
         if (row < 0 || row > 100 || col < 0 || col > 100) {
             return false;
         }
-        if (row + width > 100 || col + height > 100) {
+        if (row + height > 100 || col + width > 100) {
             return false;
         }
         Rectangle rectangle = new Rectangle(row, col, width, height);
